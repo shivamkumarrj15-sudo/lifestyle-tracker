@@ -270,7 +270,15 @@ async function runDaemon(auth) {
 async function main() {
   const args = process.argv.slice(2);
   const runOnce = args.includes('--once');
+  const sendEmailOnly = args.includes('--send-email');
   
+  if (sendEmailOnly) {
+    console.log('Dispatching test daily email immediately...');
+    await sendDailyEmail();
+    console.log('Exiting after manual email dispatch.');
+    process.exit(0);
+  }
+
   let auth = null;
   try {
     auth = await authorize();
