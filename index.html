@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lifestyle Command Center & Scheduler</title>
+  <!-- Google Fonts: Outfit (headings) & Inter (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Alarm Overlay Modal -->
+  <div id="alarm-modal" class="alarm-modal hidden">
+    <div class="alarm-content">
+      <div class="alarm-bell-icon">
+        <i data-lucide="bell-ring" class="ring-animation"></i>
+      </div>
+      <h2 id="alarm-title">Alarm Ringing!</h2>
+      <p id="alarm-message">Time to transition tasks.</p>
+      <div class="alarm-time" id="alarm-time-display">00:00 AM</div>
+      <div class="alarm-actions">
+        <button id="alarm-dismiss-btn" class="btn btn-primary btn-glow">Dismiss & Auto-Fill Task</button>
+        <button id="alarm-snooze-btn" class="btn btn-secondary">Snooze (5m)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <i data-lucide="activity"></i>
+        </div>
+        <div>
+          <h1>LIFESTYLE AUTOMATION</h1>
+          <p class="subtitle">24H Routine & Progress Command Center</p>
+        </div>
+      </div>
+      
+      <!-- Time Simulator Controls -->
+      <div class="simulator-panel card">
+        <div class="sim-header">
+          <span class="badge badge-sim"><i data-lucide="cpu" class="icon-sm"></i> Simulation Controller</span>
+          <div class="sim-status">
+            <span class="status-indicator live" id="sim-indicator"></span>
+            <span id="sim-mode-text">System Time</span>
+          </div>
+        </div>
+        <div class="sim-controls">
+          <div class="time-display-container">
+            <div class="sim-date" id="current-date">Saturday, June 06, 2026</div>
+            <div class="sim-time" id="current-time">23:30:00</div>
+          </div>
+          <div class="sim-actions">
+            <label class="switch" title="Toggle Simulation Mode">
+              <input type="checkbox" id="sim-toggle">
+              <span class="slider round"></span>
+            </label>
+            <div class="speed-selector">
+              <span class="label-xs">Speed:</span>
+              <select id="sim-speed" disabled>
+                <option value="1">1x (Real)</option>
+                <option value="60">60x (1m/sec)</option>
+                <option value="600">600x (10m/sec)</option>
+                <option value="1800">1800x (30m/sec)</option>
+                <option value="3600">3600x (1h/sec)</option>
+              </select>
+            </div>
+            <button id="sim-set-btn" class="btn btn-icon btn-secondary" title="Set Custom Time" disabled>
+              <i data-lucide="clock"></i>
+            </button>
+            <button id="sound-toggle" class="btn btn-icon btn-secondary" title="Mute/Unmute Alarms">
+              <i data-lucide="volume-2" id="sound-icon"></i>
+            </button>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; margin-top: 0.65rem; border-top: 1px solid var(--border-color); padding-top: 0.5rem; gap: 0.75rem;">
+          <button id="quick-alarm-test-btn" class="btn btn-secondary btn-xs"><i data-lucide="bell" class="icon-sm"></i> Trigger 31s Test Alarm</button>
+          <span id="quick-test-countdown" class="text-xxs text-cyan" style="display: none; font-weight:600;">Ringing in 31s...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Custom Time Selector Dialog (Hidden by Default) -->
+    <div id="custom-time-dialog" class="dialog-overlay hidden">
+      <div class="dialog card">
+        <h3>Select Custom Simulation Time</h3>
+        <div class="form-group">
+          <label for="custom-time-input">Target Time:</label>
+          <input type="time" id="custom-time-input" value="05:29">
+        </div>
+        <div class="dialog-actions">
+          <button id="custom-time-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="custom-time-apply" class="btn btn-primary">Apply Time</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Grid Dashboard Layout -->
+    <main class="dashboard-grid">
+      
+      <!-- Left Column: Live Status, Alarms, Skill and Diet -->
+      <div class="dashboard-col left-col">
+        
+        <!-- Live Status Card -->
+        <section class="card live-status-card" id="live-status-section">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="play-circle" class="icon-cyan"></i> Now Active</h2>
+            <span class="badge badge-active" id="current-task-type">HEALTH</span>
+          </div>
+          
+          <div class="live-status-content">
+            <div class="timer-container">
+              <!-- SVG Circular Progress Bar -->
+              <svg class="progress-ring" width="160" height="160">
+                <circle class="progress-ring-bg" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="70" cx="80" cy="80"/>
+                <circle class="progress-ring-bar" id="progress-circle" stroke="var(--accent-color, #06B6D4)" stroke-width="8" stroke-dasharray="439.82" stroke-dashoffset="0" fill="transparent" r="70" cx="80" cy="80" stroke-linecap="round"/>
+              </svg>
+              <div class="timer-text">
+                <span class="time-remaining" id="time-remaining">45:00</span>
+                <span class="time-label">Remaining</span>
+              </div>
+            </div>
+            
+            <div class="task-info">
+              <h3 id="current-task-name">Meditation, Brushing & Hydration</h3>
+              <p class="task-desc" id="current-task-desc">Brush teeth, drink 500ml warm water, and perform meditation.</p>
+              
+              <div class="routine-progress-bar-container">
+                <span class="label-xs">Day Progress</span>
+                <div class="routine-progress-bar">
+                  <div class="progress-fill" id="day-progress-fill" style="width: 23%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="live-status-footer">
+            <div class="footer-item">
+              <span class="label-xs">Next Scheduled Task</span>
+              <span class="val-sm" id="next-task-name">Morning Walk / Light Stretch</span>
+            </div>
+            <div class="footer-item text-right">
+              <span class="label-xs">At Time</span>
+              <span class="val-sm" id="next-task-time">06:15 AM</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- New Skill Acquisition Selector Card -->
+        <section class="card skill-card">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="graduation-cap" class="icon-amber"></i> New Skill Generator</h2>
+            <span class="badge badge-orange" id="skill-status-badge">Locked</span>
+          </div>
+          <div class="skill-content" id="skill-content-area">
+            <!-- Active Skill Display -->
+            <div id="active-skill-view">
+              <div class="skill-header-info">
+                <h3 id="active-skill-name">Video Editing (Premiere Pro)</h3>
+                <span class="badge badge-xs" id="active-skill-difficulty">Intermediate</span>
+              </div>
+              <p class="skill-desc" id="active-skill-desc">Learn video cutting, color grading, sound design, and text transitions.</p>
+              
+              <div class="skill-topics">
+                <span class="label-xs">Key Learning Modules:</span>
+                <ul id="active-skill-topics-list">
+                  <li>Timeline cuts & ripple edits</li>
+                  <li>Color grading & LUTs</li>
+                  <li>Keyframing text effects</li>
+                </ul>
+              </div>
+
+              <div class="skill-actions">
+                <button id="skill-complete-btn" class="btn btn-success btn-full btn-glow"><i data-lucide="check-circle" class="icon-sm"></i> Mark Skill as Mastered</button>
+              </div>
+            </div>
+
+            <!-- Empty Skill State -->
+            <div id="empty-skill-view" class="hidden text-center py-sm">
+              <div class="empty-icon"><i data-lucide="compass" class="icon-lg"></i></div>
+              <h3>No Skill Selected</h3>
+              <p>Ready to acquire a new capability? Let the automation choose a skill you haven't mastered yet.</p>
+              <button id="skill-generate-btn" class="btn btn-primary mt-sm"><i data-lucide="zap" class="icon-sm"></i> Generate & Lock New Skill</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Post-Gym Diet Recommendation Card -->
+        <section class="card diet-card">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="heart" class="icon-emerald"></i> Health & Diet Planner</h2>
+            <div class="diet-toggles">
+              <button class="diet-toggle-btn active" data-diet="veg">Veg</button>
+              <button class="diet-toggle-btn" data-diet="nonveg">Non-Veg</button>
+              <button class="diet-toggle-btn" data-diet="budget">Budget</button>
+            </div>
+          </div>
+          <div class="diet-content">
+            <div class="diet-header-info">
+              <h3 id="diet-meal-title">Post-Workout Muscle Recovery</h3>
+              <p class="diet-time-desc" id="diet-meal-desc">For consumption immediately after gym workout session (10:30 AM).</p>
+            </div>
+            
+            <div class="diet-meal-box">
+              <div class="meal-name" id="diet-meal-name">Paneer / Tofu Scramble & Whole Wheat Toast</div>
+              <div class="meal-macros" id="diet-meal-macros">Calories: 450 kcal | Protein: 30g | Carbs: 38g | Fats: 18g</div>
+              
+              <div class="meal-details">
+                <div class="detail-sec">
+                  <span class="label-xs">Ingredients:</span>
+                  <p id="diet-meal-ingredients">150g low fat paneer/tofu scrambled with spinach, tomatoes and black pepper + 2 slices multigrain bread.</p>
+                </div>
+                <div class="detail-sec">
+                  <span class="label-xs">Health Benefit Tips:</span>
+                  <p id="diet-meal-tips">Black pepper increases nutrient absorption. Consume within 45 mins of ending exercise.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Mobile & Calendar Integration Card -->
+        <section class="card sync-card">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="smartphone" class="icon-primary"></i> Mobile & Calendar Sync</h2>
+            <span class="badge badge-sim" id="routine-mode-badge">Holiday Mode</span>
+          </div>
+          <div class="sync-content">
+            <!-- ICS Export -->
+            <div class="sync-section">
+              <h4>1. Sync to Phone Calendar</h4>
+              <p class="text-xs text-muted mb-xs">Download the standard iCalendar (.ics) file to sync this schedule with iOS/Android calendars and set local alarms.</p>
+              <button id="download-ics-btn" class="btn btn-secondary btn-full btn-xs"><i data-lucide="download" class="icon-sm"></i> Download .ics File</button>
+            </div>
+            
+            <hr class="sync-divider">
+            
+            <!-- Google Calendar API Integration -->
+            <div class="sync-section">
+              <h4>2. Google Calendar Sync</h4>
+              <p class="text-xs text-muted mb-xs">Connect directly to Google Calendar using your Client ID. Create a dynamic calendar with automatic notifications.</p>
+              <div class="form-group-inline mb-xs">
+                <input type="text" id="gapi-client-id" placeholder="Paste Google Client ID" class="input-xs" value="745648976549-86jbhh8s9kp1pj2kajh7e3jfn275gna6.apps.googleusercontent.com">
+                <button id="gapi-sync-btn" class="btn btn-primary btn-xs"><i data-lucide="refresh-cw" class="icon-sm"></i> Sync Google</button>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <p class="text-xxs text-muted" id="gapi-status" style="margin:0;">Not connected. Enter Client ID.</p>
+                <a href="#" id="gapi-guide-link" class="text-xxs text-cyan" style="cursor: pointer; font-weight:600; text-decoration: underline;">Setup Guide</a>
+              </div>
+            </div>
+            
+            <!-- Mobile QR section removed at user request -->
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Column: 24h Timeline, Email Logger & Analytics -->
+      <div class="dashboard-col right-col">
+        
+        <!-- 24-Hour Schedule Timeline -->
+        <section class="card timeline-card">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="calendar-days" class="icon-purple"></i> Daily 24H Timeline</h2>
+            <span class="label-xs" id="timeline-date">June 06</span>
+          </div>
+          <div class="timeline-container" id="timeline-list">
+            <!-- Timeline elements dynamically generated by JS -->
+          </div>
+        </section>
+
+        <!-- Simulated Daily Review Email Logger -->
+        <section class="card mailbox-card">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="mail" class="icon-pink"></i> Interactive Mail System</h2>
+            <span class="mail-count-badge hidden" id="mail-count">1</span>
+          </div>
+          <div class="mailbox-layout">
+            <!-- Inbox List Panel -->
+            <div class="inbox-list" id="inbox-list-container">
+              <!-- Dynamically populated emails -->
+              <div class="no-mail-state" id="no-mail-message">
+                <i data-lucide="check-check"></i>
+                <p>Inboxes are clear. Check-in email arrives daily at 09:30 PM.</p>
+                <!-- Quick Test Trigger for Dev -->
+                <button id="dev-trigger-email" class="btn btn-secondary btn-xs mt-xs">Trigger Check-In Mail Now</button>
+              </div>
+            </div>
+            
+            <!-- Mail Reading Panel -->
+            <div class="mail-reader hidden" id="mail-reader-panel">
+              <div class="mail-header-info">
+                <div class="mail-subject" id="read-subject">Review Your Routine - 06 June 2026</div>
+                <div class="mail-meta">
+                  <span>From: <strong>Auto-System &lt;routine@antigravity.ai&gt;</strong></span>
+                  <span id="read-date">Today, 09:30 PM</span>
+                </div>
+              </div>
+              <div class="mail-body">
+                <p class="mail-intro">Hello! Please verify which activities you successfully completed today. Provide an honest report so we can graph your weekly/monthly consistency.</p>
+                
+                <!-- Task checklist form -->
+                <form id="daily-checklist-form" class="daily-checklist-form">
+                  <div class="checklist-items" id="mail-checklist-items">
+                    <!-- Checkbox list of tasks generated by JS -->
+                  </div>
+                  <div class="mail-actions">
+                    <button type="submit" class="btn btn-success btn-glow">Submit Honest Summary</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Progress Analytics Dashboard -->
+        <section class="card analytics-card">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="line-chart" class="icon-cyan"></i> Analytics & Consistency</h2>
+            <div class="analytics-toggles">
+              <button class="analytics-toggle-btn active" id="analytics-toggle-weekly" data-view="weekly">Weekly</button>
+              <button class="analytics-toggle-btn" id="analytics-toggle-monthly" data-view="monthly">Monthly</button>
+            </div>
+          </div>
+          <div class="analytics-content">
+            <div class="stats-row">
+              <div class="stat-box">
+                <span class="stat-num" id="stat-streak">0 Days</span>
+                <span class="stat-label">Current Streak</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num" id="stat-avg-score">0%</span>
+                <span class="stat-label">Avg Completion</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num" id="stat-tasks-done">0</span>
+                <span class="stat-label">Tasks Finished</span>
+              </div>
+            </div>
+            
+            <!-- Chart.js canvas -->
+            <div class="chart-container">
+              <canvas id="progress-chart"></canvas>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Google API Setup Guide Dialog (Hidden by Default) -->
+  <div id="gapi-guide-dialog" class="dialog-overlay hidden">
+    <div class="dialog card" style="max-width: 480px;">
+      <h3>Google Calendar API Setup Guide</h3>
+      <div style="font-size: 0.85rem; line-height: 1.5; color: var(--text-main); margin-bottom: 1.25rem; text-align: left; max-height: 300px; overflow-y: auto; padding-right: 0.5rem;">
+        <p>बिना किसी फ़ाइल डाउनलोड के, सीधे अपने फोन कैलेंडर (Google Calendar) में रीयल-टाइम ऑटो-सिंक और अलार्म चालू करने की गाइड:</p>
+        <ol style="margin-left: 1.25rem; margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.6rem;">
+          <li><strong>Google Cloud Console खोलें:</strong> अपने वेब ब्राउज़र में <a href="https://console.cloud.google.com/" target="_blank" style="color:var(--cyan); text-decoration:underline;">Google Cloud Console</a> खोलें और अपने Gmail अकाउंट से लॉगिन करें।</li>
+          <li><strong>नया प्रोजेक्ट बनाएं:</strong> सबसे ऊपर "Select a Project" पर क्लिक करें और "New Project" पर क्लिक करके प्रोजेक्ट का नाम (जैसे: <code>Lifestyle Scheduler</code>) रखें और Create दबाएं।</li>
+          <li><strong>Google Calendar API एक्टिव करें:</strong> सर्च बार में <strong>"Google Calendar API"</strong> लिखकर खोजें और उसे "Enable" करें।</li>
+          <li><strong>OAuth Consent Screen सेटअप करें:</strong> बाएँ साइडबार में "APIs & Services" > "OAuth Consent Screen" पर जाएँ। <strong>External</strong> चुनें और Create दबाएं। ऐप का नाम (जैसे: <code>My Tracker</code>) और अपनी ईमेल भरें। 'Save and Continue' करें।</li>
+          <li><strong>Test Users में ईमेल जोड़ें:</strong> Consent screen के "Test Users" सेक्शन में जाकर <strong>Add Users</strong> पर क्लिक करें और अपनी वही ईमेल आईडी जोड़ें जिससे आप सिंक करना चाहते हैं।</li>
+          <li><strong>Client ID बनाएं:</strong> "Credentials" टैब में जाएँ। ऊपर <strong>"+ Create Credentials"</strong> > <strong>"OAuth Client ID"</strong> पर क्लिक करें। Application Type में <strong>"Web Application"</strong> चुनें।</li>
+          <li><strong>Authorized Javascript Origins:</strong> Origins में <code>http://localhost:8080</code> जोड़ें।</li>
+          <li><strong>कॉपी और पेस्ट करें:</strong> Client ID को कॉपी करें और डैशबोर्ड में बने इनपुट बॉक्स में पेस्ट करके <strong>Sync Google</strong> बटन पर क्लिक करें।</li>
+        </ol>
+        <p style="margin-top:0.75rem; color:var(--text-muted); font-size:0.75rem;">💡 <em>नोट: एक बार सिंक करने के बाद आपका फोन और डेस्कटॉप हमेशा ऑटोमैटिकली बिना किसी मैन्युअल फाइल डाउनलोड के गूगल कैलेंडर के माध्यम से सिंक रहेंगे।</em></p>
+      </div>
+      <div class="dialog-actions">
+        <button id="gapi-guide-close" class="btn btn-primary btn-full">Close Guide</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- External JS logic -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
