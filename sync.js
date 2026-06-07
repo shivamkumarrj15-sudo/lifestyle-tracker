@@ -321,7 +321,7 @@ async function handleAIProxyRequest(req, res) {
             { role: 'user', content: text }
           ],
           temperature: 0.1,
-          max_tokens: 1000
+          max_tokens: 300
         })
       });
       

@@ -886,7 +886,9 @@ function generateICSFile() {
     loopDate.setDate(loopDate.getDate() + d);
     
     const thresholdDate = new Date('2026-06-19T00:00:00');
-    const routine = loopDate >= thresholdDate ? SCHOOL_ROUTINE : DEFAULT_ROUTINE;
+    const routine = loopDate >= thresholdDate 
+      ? (STATE.customSchoolRoutine || SCHOOL_ROUTINE) 
+      : (STATE.customDefaultRoutine || DEFAULT_ROUTINE);
     
     routine.forEach(task => {
       if (task.type === 'alarm') return;
@@ -1020,6 +1022,33 @@ async function syncToGoogleCalendarAPI(accessToken) {
     }
     
     const referenceTime = new Date(STATE.currentTime);
+
+    // Deduplication: Clear events for the next 7 days
+    const rangeStart = new Date(referenceTime);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(referenceTime);
+    rangeEnd.setDate(rangeEnd.getDate() + 7);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    statusEl.textContent = "Clearing old events from calendar...";
+    const listEventsRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?timeMin=${rangeStart.toISOString()}&timeMax=${rangeEnd.toISOString()}&singleEvents=true`, 
+      {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      }
+    );
+    if (listEventsRes.ok) {
+      const eventList = await listEventsRes.json();
+      const events = eventList.items || [];
+      for (const event of events) {
+        await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${event.id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+      }
+      console.log(`Cleared ${events.length} old calendar events.`);
+    }
+
     statusEl.textContent = "Creating routine events in Google Calendar...";
     
     for (let d = 0; d < 7; d++) {
@@ -1027,7 +1056,9 @@ async function syncToGoogleCalendarAPI(accessToken) {
       loopDate.setDate(loopDate.getDate() + d);
       
       const thresholdDate = new Date('2026-06-19T00:00:00');
-      const routine = loopDate >= thresholdDate ? SCHOOL_ROUTINE : DEFAULT_ROUTINE;
+      const routine = loopDate >= thresholdDate 
+        ? (STATE.customSchoolRoutine || SCHOOL_ROUTINE) 
+        : (STATE.customDefaultRoutine || DEFAULT_ROUTINE);
       
       for (const task of routine) {
         if (task.type === 'alarm') continue;
@@ -1204,14 +1235,20 @@ ${JSON.stringify(SKILLS_DATABASE)}
 
 Your job:
 1. If Shivam wants to CHANGE his routine, ADD a new task (e.g. 'family time add kar do', '1h gym timing move kar do'), or adjust times:
-   Analyze the request and modify the routine array accordingly.
-   - If adding a task, create a task object: { "id": "generated_unique_id", "name": "Task Name", "start": "HH:MM", "end": "HH:MM", "desc": "Description", "type": "social" }. Choose a logical "type" (e.g., social, health, leisure, learning, creative, trading, sleep).
-   - If there is a time overlap with existing tasks, shrink or adjust the start/end times of the other tasks to fit the new task without leaving empty gaps in the 24-hour schedule (or make a logical allocation).
-   - Ensure start and end times are strictly in "HH:MM" format.
+   Analyze the request and decide which tasks need to be added, modified, or removed.
+   To avoid token limits, DO NOT return the entire routine. Return ONLY the modified, new, or deleted tasks in a "changes" array.
+   - For new tasks, specify "action": "add", a generated unique "id", "name", "start", "end", "desc", and "type". Choose a logical "type" (e.g. social, health, leisure, learning, creative, trading, sleep).
+   - For modified tasks, specify "action": "update", their existing "id", and any modified fields (like "start", "end", "name", or "desc").
+   - For deleted tasks, specify "action": "delete" and the existing "id".
+   - If there is a time overlap with existing tasks, shrink or adjust the start/end times of the other tasks to fit the new task without leaving empty gaps in the 24-hour schedule, and list those adjusted tasks under "changes" as well.
+   - Ensure all start/end times are strictly in "HH:MM" format.
    - Return a raw JSON object:
    {
      "action": "update_routine",
-     "updatedRoutine": [ ... ], // The COMPLETE updated array of all routine tasks (sorted by start time)
+     "changes": [
+       { "action": "add", "id": "family_time", "name": "Family Time", "start": "10:30", "end": "11:30", "desc": "Spend quality time with family.", "type": "social" },
+       { "action": "update", "id": "post_gym_diet", "start": "11:30", "end": "12:30" }
+     ],
      "response": "Brief friendly confirmation in Hindi/Hinglish explaining the adjustments (e.g. 'Sure Shivam! Maine Family Time add kar diya hai aur baki tasks ko move/shrink kar diya hai.')"
    }
    
@@ -1260,8 +1297,12 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
     
     if (proxyRes.ok) {
       data = await proxyRes.json();
-      success = true;
-      console.log("Successfully fetched AI response via local backend proxy.");
+      if (data && !data.error) {
+        success = true;
+        console.log("Successfully fetched AI response via local backend proxy.");
+      } else if (data && data.error) {
+        console.warn("Local AI proxy returned API error:", data.error.message);
+      }
     }
   } catch (err) {
     console.warn("Local AI proxy failed, trying direct browser fallback...", err);
@@ -1284,12 +1325,13 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
             { role: 'user', content: text }
           ],
           temperature: 0.1,
-          max_tokens: 1000
+          max_tokens: 300
         })
       });
       
       if (!res.ok) {
-        throw new Error(`OpenRouter HTTP error: ${res.status}`);
+        const errorJson = await res.json().catch(() => ({}));
+        throw new Error(errorJson?.error?.message || `OpenRouter HTTP error: ${res.status}`);
       }
       
       data = await res.json();
@@ -1299,6 +1341,12 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
       throw new Error("Failed to connect to AI server: " + fallbackErr.message);
     }
   }
+    if (data.error) {
+      throw new Error(data.error.message || JSON.stringify(data.error));
+    }
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error("Invalid API response structure: " + JSON.stringify(data));
+    }
     let replyText = data.choices[0].message.content.trim();
     
     // Robust JSON extraction to prevent parser crashes from markdown formatting
@@ -1314,8 +1362,37 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
     const cleanJSONText = extractJSON(replyText.replace(/^```json/i, '').replace(/```$/, '').trim());
     const result = JSON.parse(cleanJSONText);
     
-    if (result.action === 'update_routine' && Array.isArray(result.updatedRoutine)) {
-      routine = result.updatedRoutine;
+    if (result.action === 'update_routine') {
+      if (Array.isArray(result.changes)) {
+        result.changes.forEach(chg => {
+          if (chg.action === 'add') {
+            if (!routine.some(t => t.id === chg.id)) {
+              routine.push({
+                id: chg.id,
+                name: chg.name || 'New Task',
+                start: chg.start,
+                end: chg.end,
+                desc: chg.desc || '',
+                type: chg.type || 'leisure'
+              });
+            }
+          } else if (chg.action === 'update') {
+            const task = routine.find(t => t.id === chg.id);
+            if (task) {
+              if (chg.start !== undefined) task.start = chg.start;
+              if (chg.end !== undefined) task.end = chg.end;
+              if (chg.name !== undefined) task.name = chg.name;
+              if (chg.desc !== undefined) task.desc = chg.desc;
+              if (chg.type !== undefined) task.type = chg.type;
+            }
+          } else if (chg.action === 'delete') {
+            routine = routine.filter(t => t.id !== chg.id);
+          }
+        });
+      } else if (Array.isArray(result.updatedRoutine)) {
+        routine = result.updatedRoutine;
+      }
+
       routine.sort((a, b) => timeStrToMins(a.start) - timeStrToMins(b.start));
       
       if (isSchoolMode) {
