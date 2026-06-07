@@ -1149,113 +1149,103 @@ function clockTick() {
 }
 
 // AI Routine Assistant NLP Parser
-function parseNaturalTime(str) {
-  str = str.toLowerCase().trim();
-  const hhmm = str.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/);
-  let hrs = 0;
-  let mins = 0;
-  let hasTime = false;
-  let isPm = false;
-  let isAm = false;
-  
-  if (hhmm) {
-    hrs = parseInt(hhmm[1]);
-    mins = parseInt(hhmm[2]);
-    if (hhmm[3] === 'pm') isPm = true;
-    if (hhmm[3] === 'am') isAm = true;
-    hasTime = true;
-  } else {
-    const singleHr = str.match(/(\d{1,2})\s*(am|pm)?/);
-    if (singleHr) {
-      hrs = parseInt(singleHr[1]);
-      mins = 0;
-      if (singleHr[2] === 'pm') isPm = true;
-      if (singleHr[2] === 'am') isAm = true;
-      hasTime = true;
-    }
-  }
-  
-  if (!hasTime) return null;
-  
-  if ((str.includes('pm') || isPm) && hrs < 12) {
-    hrs += 12;
-  }
-  if ((str.includes('am') || isAm) && hrs === 12) {
-    hrs = 0;
-  }
-  
-  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-}
-
-function parseNaturalTimeRange(str) {
-  const parts = str.split(/to|-/);
-  if (parts.length >= 2) {
-    const t1 = parseNaturalTime(parts[0]);
-    const t2 = parseNaturalTime(parts[1]);
-    if (t1 && t2) return [t1, t2];
-  }
-  const t = parseNaturalTime(str);
-  return t ? [t, null] : null;
-}
-
-function processAIChatCommand(text) {
+async function processAIChatCommand(text) {
   const isSchoolMode = STATE.currentTime >= new Date('2026-06-19T00:00:00');
   let routine = isSchoolMode 
     ? (STATE.customSchoolRoutine ? [...STATE.customSchoolRoutine] : [...SCHOOL_ROUTINE])
     : (STATE.customDefaultRoutine ? [...STATE.customDefaultRoutine] : [...DEFAULT_ROUTINE]);
 
-  text = text.toLowerCase().trim();
+  // Load OpenRouter key from local storage
+  const apiKey = localStorage.getItem('lifestyle_openrouter_key');
   
-  let timeRange = parseNaturalTimeRange(text);
-  let matchedTask = null;
-  
-  for (const task of routine) {
-    const keywords = task.name.toLowerCase().split(/[\s,&]+/);
-    if (keywords.some(kw => kw.length > 2 && text.includes(kw)) || 
-        text.includes(task.id) || 
-        (task.id === 'gym' && text.includes('gym')) ||
-        (task.id === 'wake_up' && (text.includes('wake') || text.includes('alarm') || text.includes('uthna')))) {
-      matchedTask = task;
-      break;
-    }
+  if (!apiKey || apiKey === 'your-api-key' || apiKey.trim() === '') {
+    return "Please set your OpenRouter API key in the settings panel (click the gear icon ⚙️ above) to activate the AI Assistant.";
   }
+
+  const cleanTasks = routine.map(t => ({ id: t.id, name: t.name, start: t.start, end: t.end, desc: t.desc }));
   
-  if (matchedTask && timeRange) {
-    const [start, end] = timeRange;
-    const oldDuration = timeStrToMins(matchedTask.end) - timeStrToMins(matchedTask.start);
-    matchedTask.start = start;
-    if (end) {
-      matchedTask.end = end;
-    } else {
-      const startMins = timeStrToMins(start);
-      const endMins = (startMins + oldDuration) % 1440;
-      const hrs = Math.floor(endMins / 60);
-      const mins = endMins % 60;
-      matchedTask.end = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  const systemInstruction = `You are a schedule manager. The user wants to change their daily routine.
+Current tasks:
+${JSON.stringify(cleanTasks)}
+
+Analyze their query: "${text}".
+Identify which task they want to modify, and what the new times should be.
+Return a raw JSON object with:
+{
+  "matchedTaskId": "id_of_task_or_null",
+  "newStart": "HH:MM_format_or_null",
+  "newEnd": "HH:MM_format_or_null",
+  "response": "Brief friendly confirmation message in Hindi/Hinglish (e.g. 'Sure Shivam! Maine Gym ka time badalkar...')"
+}
+Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
+
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Lifestyle Tracker'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'user', content: systemInstruction }
+        ],
+        temperature: 0.1
+      })
+    });
+    
+    if (!res.ok) {
+      throw new Error(`OpenRouter HTTP error: ${res.status}`);
     }
     
-    routine.sort((a, b) => timeStrToMins(a.start) - timeStrToMins(b.start));
+    const data = await res.json();
+    let replyText = data.choices[0].message.content.trim();
     
-    if (isSchoolMode) {
-      STATE.customSchoolRoutine = routine;
-      localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(routine));
-    } else {
-      STATE.customDefaultRoutine = routine;
-      localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(routine));
+    replyText = replyText.replace(/^```json/i, '').replace(/```$/, '').trim();
+    const result = JSON.parse(replyText);
+    
+    if (result.matchedTaskId && result.newStart) {
+      const taskIndex = routine.findIndex(t => t.id === result.matchedTaskId);
+      if (taskIndex !== -1) {
+        routine[taskIndex].start = result.newStart;
+        if (result.newEnd) {
+          routine[taskIndex].end = result.newEnd;
+        } else {
+          // Keep duration same
+          const oldDur = timeStrToMins(routine[taskIndex].end) - timeStrToMins(routine[taskIndex].start);
+          const startMins = timeStrToMins(result.newStart);
+          const endMins = (startMins + oldDur) % 1440;
+          const hrs = Math.floor(endMins / 60);
+          const mins = endMins % 60;
+          routine[taskIndex].end = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        }
+        
+        routine.sort((a, b) => timeStrToMins(a.start) - timeStrToMins(b.start));
+        
+        if (isSchoolMode) {
+          STATE.customSchoolRoutine = routine;
+          localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(routine));
+        } else {
+          STATE.customDefaultRoutine = routine;
+          localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(routine));
+        }
+        saveToLocalStorage();
+        
+        STATE.lastActiveTaskId = null;
+        clockTick();
+        
+        return result.response || `Routine updated successfully for ${routine[taskIndex].name}.`;
+      }
     }
-    saveToLocalStorage();
     
-    STATE.lastActiveTaskId = null;
-    clockTick();
-    
-    return `Sure Shivam! I have updated your routine. **${matchedTask.name}** is now scheduled from **${format12Hour(matchedTask.start)}** to **${format12Hour(matchedTask.end)}**. I have also updated your timeline display!`;
+    return result.response || "I couldn't match a task or find a new time in your request. Please try again.";
+  } catch (err) {
+    console.error('AI parse error:', err);
+    return "Sorry Shivam, I encountered an error connecting to OpenRouter. Please check your API key in the settings panel.";
   }
-  
-  if (text.includes('hi') || text.includes('hello') || text.includes('help') || text.includes('sun') || text.includes('listen')) {
-    return "Hello Shivam! I am your AI Assistant. Tell me how to change your routine. E.g.:\n- *'change gym to 4 PM to 5 PM'*\n- *'set wake up to 6:00 AM'*\n- *'change english speaking to 9 PM'*\nYour changes will update instantly!";
-  }
-  
-  return "I couldn't quite understand that command. Please mention the task name and the new time (e.g. 'change gym to 4 PM to 5:30 PM').";
 }
 
 // Initialise application
@@ -1430,6 +1420,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const aiChatInput = document.getElementById('ai-chat-input');
   const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
   const aiChatHistory = document.getElementById('ai-chat-history');
+  const aiSettingsBtn = document.getElementById('ai-settings-btn');
+  const aiSettingsPanel = document.getElementById('ai-settings-panel');
+  const aiApiKeyInput = document.getElementById('ai-api-key-input');
+  const aiApiKeySave = document.getElementById('ai-api-key-save');
+
+  // Load OpenRouter key
+  aiApiKeyInput.value = localStorage.getItem('lifestyle_openrouter_key') || '';
+
+  aiSettingsBtn.addEventListener('click', () => {
+    aiSettingsPanel.classList.toggle('hidden');
+  });
+
+  aiApiKeySave.addEventListener('click', () => {
+    const key = aiApiKeyInput.value.trim();
+    if (key) {
+      localStorage.setItem('lifestyle_openrouter_key', key);
+      alert("OpenRouter API key saved successfully!");
+      aiSettingsPanel.classList.add('hidden');
+    }
+  });
 
   const appendChatMessage = (text, sender) => {
     const bubble = document.createElement('div');
@@ -1439,17 +1449,28 @@ document.addEventListener('DOMContentLoaded', () => {
     aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
   };
 
-  const handleAiMessageSend = () => {
+  const handleAiMessageSend = async () => {
     const text = aiChatInput.value.trim();
     if (!text) return;
 
     appendChatMessage(text, 'user');
     aiChatInput.value = '';
 
-    setTimeout(() => {
-      const response = processAIChatCommand(text);
+    // Typing / thinking indicator
+    const typingIndicator = document.createElement('div');
+    typingIndicator.className = 'chat-bubble bot-bubble';
+    typingIndicator.innerHTML = '<p style="font-style: italic; opacity: 0.6;">Thinking...</p>';
+    aiChatHistory.appendChild(typingIndicator);
+    aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+
+    try {
+      const response = await processAIChatCommand(text);
+      typingIndicator.remove();
       appendChatMessage(response, 'bot');
-    }, 400);
+    } catch (err) {
+      typingIndicator.remove();
+      appendChatMessage("Sorry, I encountered an error. Please try again.", 'bot');
+    }
   };
 
   aiChatSendBtn.addEventListener('click', handleAiMessageSend);
