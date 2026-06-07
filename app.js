@@ -979,6 +979,8 @@ function initGoogleAuth(clientId) {
           throw tokenResponse;
         }
         statusEl.textContent = "Authorized! Syncing tasks to Google Calendar...";
+        localStorage.setItem('lifestyle_gapi_token', tokenResponse.access_token);
+        localStorage.setItem('lifestyle_gapi_token_expiry', String(Date.now() + (tokenResponse.expires_in - 300) * 1000));
         await syncToGoogleCalendarAPI(tokenResponse.access_token);
       },
     });
@@ -1080,6 +1082,24 @@ async function syncToGoogleCalendarAPI(accessToken) {
     statusEl.textContent = "Sync failed. Verify Client ID.";
     statusEl.style.color = "#ef4444";
     console.error(err);
+  }
+}
+
+async function autoSyncGoogleCalendar() {
+  const token = localStorage.getItem('lifestyle_gapi_token');
+  const expiry = localStorage.getItem('lifestyle_gapi_token_expiry');
+  if (token && expiry && Date.now() < Number(expiry)) {
+    console.log("Auto-syncing to Google Calendar via stored browser token...");
+    const statusEl = document.getElementById('gapi-status');
+    if (statusEl) {
+      statusEl.textContent = "Auto-syncing changes to phone...";
+      statusEl.style.color = "var(--cyan)";
+    }
+    try {
+      await syncToGoogleCalendarAPI(token);
+    } catch (err) {
+      console.error("Auto-sync failed:", err);
+    }
   }
 }
 
@@ -1321,6 +1341,7 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
       
       STATE.lastActiveTaskId = null;
       clockTick();
+      autoSyncGoogleCalendar();
     } else if (result.action === 'reset') {
       if (isSchoolMode) {
         STATE.customSchoolRoutine = null;
@@ -1346,6 +1367,7 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
       
       STATE.lastActiveTaskId = null;
       clockTick();
+      autoSyncGoogleCalendar();
     }
     
     return result.response || "I couldn't process your request.";
