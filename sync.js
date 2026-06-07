@@ -11,6 +11,8 @@ import { DEFAULT_ROUTINE, SCHOOL_ROUTINE } from './data.js';
 const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json');
 const TOKEN_PATH = path.join(process.cwd(), 'token.json');
 const CONFIG_PATH = path.join(process.cwd(), 'email_config.json');
+const CUSTOM_DEFAULT_PATH = path.join(process.cwd(), 'custom_default_routine.json');
+const CUSTOM_SCHOOL_PATH = path.join(process.cwd(), 'custom_school_routine.json');
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 
@@ -91,7 +93,25 @@ async function authorize() {
 // Determine active routine based on date (Threshold: June 19, 2026)
 function getRoutineForDate(date) {
   const thresholdDate = new Date('2026-06-19T00:00:00');
-  return date >= thresholdDate ? SCHOOL_ROUTINE : DEFAULT_ROUTINE;
+  if (date >= thresholdDate) {
+    if (fs.existsSync(CUSTOM_SCHOOL_PATH)) {
+      try {
+        return JSON.parse(fs.readFileSync(CUSTOM_SCHOOL_PATH, 'utf-8'));
+      } catch (e) {
+        console.error('Error reading custom school routine:', e);
+      }
+    }
+    return SCHOOL_ROUTINE;
+  } else {
+    if (fs.existsSync(CUSTOM_DEFAULT_PATH)) {
+      try {
+        return JSON.parse(fs.readFileSync(CUSTOM_DEFAULT_PATH, 'utf-8'));
+      } catch (e) {
+        console.error('Error reading custom default routine:', e);
+      }
+    }
+    return DEFAULT_ROUTINE;
+  }
 }
 
 // Sync to Google Calendar
@@ -320,6 +340,43 @@ async function handleAIProxyRequest(req, res) {
   });
 }
 
+function handleSaveRoutineRequest(req, res) {
+  let body = '';
+  req.on('data', chunk => { body += chunk; });
+  req.on('end', () => {
+    try {
+      const parsed = JSON.parse(body);
+      const { type, routine } = parsed;
+      
+      if (type === 'school') {
+        fs.writeFileSync(CUSTOM_SCHOOL_PATH, JSON.stringify(routine, null, 2));
+        console.log('Saved custom school routine to server.');
+      } else {
+        fs.writeFileSync(CUSTOM_DEFAULT_PATH, JSON.stringify(routine, null, 2));
+        console.log('Saved custom default routine to server.');
+      }
+      
+      res.writeHead(200, { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify({ success: true }));
+      
+      // Auto-trigger sync to update phone calendar
+      authorize().then(auth => syncCalendar(auth)).catch(e => {
+        console.log('Auto-sync skipped after save:', e.message);
+      });
+    } catch (err) {
+      console.error('Save routine error:', err);
+      res.writeHead(500, { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+}
+
 function startHttpServer() {
   const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -334,6 +391,8 @@ function startHttpServer() {
     
     if (req.method === 'POST' && req.url === '/api/ai') {
       handleAIProxyRequest(req, res);
+    } else if (req.method === 'POST' && req.url === '/api/save_routine') {
+      handleSaveRoutineRequest(req, res);
     } else {
       serveStaticFile(req, res);
     }

@@ -1183,24 +1183,33 @@ Here is the Skills Database for learning:
 ${JSON.stringify(SKILLS_DATABASE)}
 
 Your job:
-1. If Shivam wants to CHANGE or modify his routine times (e.g. 'change gym to 4 PM to 5 PM', 'set wake up alarm to 6:00 AM'):
-   Return a raw JSON object ONLY:
+1. If Shivam wants to CHANGE his routine, ADD a new task (e.g. 'family time add kar do', '1h gym timing move kar do'), or adjust times:
+   Analyze the request and modify the routine array accordingly.
+   - If adding a task, create a task object: { "id": "generated_unique_id", "name": "Task Name", "start": "HH:MM", "end": "HH:MM", "desc": "Description", "type": "social" }. Choose a logical "type" (e.g., social, health, leisure, learning, creative, trading, sleep).
+   - If there is a time overlap with existing tasks, shrink or adjust the start/end times of the other tasks to fit the new task without leaving empty gaps in the 24-hour schedule (or make a logical allocation).
+   - Ensure start and end times are strictly in "HH:MM" format.
+   - Return a raw JSON object:
    {
-     "action": "modify",
-     "matchedTaskId": "id_of_task",
-     "newStart": "HH:MM",
-     "newEnd": "HH:MM",
-     "response": "Brief friendly confirmation in Hindi/Hinglish (e.g. 'Sure Shivam! Maine Gym ka time badalkar...')"
+     "action": "update_routine",
+     "updatedRoutine": [ ... ], // The COMPLETE updated array of all routine tasks (sorted by start time)
+     "response": "Brief friendly confirmation in Hindi/Hinglish explaining the adjustments (e.g. 'Sure Shivam! Maine Family Time add kar diya hai aur baki tasks ko move/shrink kar diya hai.')"
    }
    
-2. If Shivam asks a question ABOUT his routine, what to do in the gym, what to eat, or what skills to learn (e.g. 'gym me kya karna hai', 'diet details', 'new skill modules', 'english practice tips'):
+2. If Shivam wants to RESET his routine to default:
+   Return a raw JSON object:
+   {
+     "action": "reset",
+     "response": "Sure Shivam! Maine aapka routine default par reset kar diya hai."
+   }
+
+3. If Shivam asks a question ABOUT his routine, what to do in the gym, what to eat, or what skills to learn (e.g. 'gym me kya karna hai', 'diet details', 'new skill modules', 'english practice tips'):
    Answer his question accurately and helpfully in a friendly Hinglish/Hindi tone based on the data above. Return a raw JSON object:
    {
      "action": "answer",
      "response": "Your detailed answer in Hindi/Hinglish with clear bullet points"
    }
    
-3. If Shivam asks ANY other general question not related to his routine, gym, diet, or skills (e.g. general knowledge, writing code, mathematical calculations, other off-topic stuff):
+4. If Shivam asks ANY other general question not related to his routine, gym, diet, or skills (e.g. general knowledge, writing code, mathematical calculations, other off-topic stuff):
    You MUST politely decline to answer. Return a raw JSON object:
    {
      "action": "decline",
@@ -1275,36 +1284,58 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
     replyText = replyText.replace(/^```json/i, '').replace(/```$/, '').trim();
     const result = JSON.parse(replyText);
     
-    if (result.action === 'modify' && result.matchedTaskId && result.newStart) {
-      const taskIndex = routine.findIndex(t => t.id === result.matchedTaskId);
-      if (taskIndex !== -1) {
-        routine[taskIndex].start = result.newStart;
-        if (result.newEnd) {
-          routine[taskIndex].end = result.newEnd;
-        } else {
-          // Keep duration same
-          const oldDur = timeStrToMins(routine[taskIndex].end) - timeStrToMins(routine[taskIndex].start);
-          const startMins = timeStrToMins(result.newStart);
-          const endMins = (startMins + oldDur) % 1440;
-          const hrs = Math.floor(endMins / 60);
-          const mins = endMins % 60;
-          routine[taskIndex].end = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-        }
-        
-        routine.sort((a, b) => timeStrToMins(a.start) - timeStrToMins(b.start));
-        
-        if (isSchoolMode) {
-          STATE.customSchoolRoutine = routine;
-          localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(routine));
-        } else {
-          STATE.customDefaultRoutine = routine;
-          localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(routine));
-        }
-        saveToLocalStorage();
-        
-        STATE.lastActiveTaskId = null;
-        clockTick();
+    if (result.action === 'update_routine' && Array.isArray(result.updatedRoutine)) {
+      routine = result.updatedRoutine;
+      routine.sort((a, b) => timeStrToMins(a.start) - timeStrToMins(b.start));
+      
+      if (isSchoolMode) {
+        STATE.customSchoolRoutine = routine;
+        localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(routine));
+      } else {
+        STATE.customDefaultRoutine = routine;
+        localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(routine));
       }
+      saveToLocalStorage();
+      
+      // Persist to local server
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const saveUrl = isLocalhost ? '/api/save_routine' : 'http://localhost:8080/api/save_routine';
+      fetch(saveUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: isSchoolMode ? 'school' : 'default',
+          routine: routine
+        })
+      }).catch(err => console.error("Error saving routine to server:", err));
+      
+      STATE.lastActiveTaskId = null;
+      clockTick();
+    } else if (result.action === 'reset') {
+      if (isSchoolMode) {
+        STATE.customSchoolRoutine = null;
+        localStorage.removeItem('lifestyle_customSchoolRoutine');
+      } else {
+        STATE.customDefaultRoutine = null;
+        localStorage.removeItem('lifestyle_customDefaultRoutine');
+      }
+      saveToLocalStorage();
+      
+      // Reset on local server
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const saveUrl = isLocalhost ? '/api/save_routine' : 'http://localhost:8080/api/save_routine';
+      const original = isSchoolMode ? SCHOOL_ROUTINE : DEFAULT_ROUTINE;
+      fetch(saveUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: isSchoolMode ? 'school' : 'default',
+          routine: original
+        })
+      }).catch(err => console.error("Error resetting routine on server:", err));
+      
+      STATE.lastActiveTaskId = null;
+      clockTick();
     }
     
     return result.response || "I couldn't process your request.";
@@ -1317,6 +1348,28 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
 // Initialise application
 document.addEventListener('DOMContentLoaded', () => {
   loadFromLocalStorage();
+  
+  // Try loading custom routines from local server if available
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const serverBase = isLocalhost ? '' : 'http://localhost:8080';
+  
+  fetch(`${serverBase}/custom_default_routine.json`)
+    .then(res => { if (res.ok) return res.json(); throw new Error(); })
+    .then(data => {
+      STATE.customDefaultRoutine = data;
+      localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(data));
+      clockTick();
+    })
+    .catch(() => {});
+
+  fetch(`${serverBase}/custom_school_routine.json`)
+    .then(res => { if (res.ok) return res.json(); throw new Error(); })
+    .then(data => {
+      STATE.customSchoolRoutine = data;
+      localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(data));
+      clockTick();
+    })
+    .catch(() => {});
   
   // UI bindings
   const simToggle = document.getElementById('sim-toggle');
