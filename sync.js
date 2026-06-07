@@ -278,7 +278,10 @@ function serveStaticFile(req, res) {
   }
   
   const ext = path.extname(filePath).toLowerCase();
-  res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'text/plain' });
+  res.writeHead(200, { 
+    'Content-Type': MIME_TYPES[ext] || 'text/plain',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
+  });
   fs.createReadStream(filePath).pipe(res);
 }
 

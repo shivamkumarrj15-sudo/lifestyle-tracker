@@ -90,6 +90,16 @@
       </div>
     </header>
 
+    <!-- Https Warning Banner (Hidden by Default) -->
+    <div id="https-warning-banner" class="hidden" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.25)); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 1rem; width: 100%; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);">
+      <div style="background: rgba(239, 68, 68, 0.2); border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <i data-lucide="alert-triangle" style="color: #ef4444; width: 20px; height: 20px;"></i>
+      </div>
+      <p style="font-size: 0.85rem; line-height: 1.5; color: #fecaca; margin: 0; font-family: 'Inter', sans-serif; flex-grow: 1;">
+        <strong>Security Warning (Mixed Content Block):</strong> You are viewing the hosted HTTPS version. Browsers block secure sites from talking to local background daemons over unsecure HTTP. To allow <strong>Google Calendar synchronization</strong> and <strong>automatic routine adjustments</strong>, please open the local dashboard at: <a href="http://localhost:8080" style="color: var(--cyan); font-weight:700; text-decoration:underline; text-shadow: 0 0 5px rgba(6,182,212,0.3);">http://localhost:8080</a> (on PC) or <a href="http://192.168.29.89:8080" id="local-mobile-link" style="color: var(--cyan); font-weight:700; text-decoration:underline;">http://192.168.29.89:8080</a> (on Mobile Wi-Fi).
+      </p>
+    </div>
+
     <!-- Custom Time Selector Dialog (Hidden by Default) -->
     <div id="custom-time-dialog" class="dialog-overlay hidden">
       <div class="dialog card">

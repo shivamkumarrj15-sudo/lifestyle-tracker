@@ -1281,8 +1281,18 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
   }
     let replyText = data.choices[0].message.content.trim();
     
-    replyText = replyText.replace(/^```json/i, '').replace(/```$/, '').trim();
-    const result = JSON.parse(replyText);
+    // Robust JSON extraction to prevent parser crashes from markdown formatting
+    const extractJSON = (str) => {
+      const firstOpen = str.indexOf('{');
+      const lastClose = str.lastIndexOf('}');
+      if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+        return str.slice(firstOpen, lastClose + 1);
+      }
+      return str;
+    };
+    
+    const cleanJSONText = extractJSON(replyText.replace(/^```json/i, '').replace(/```$/, '').trim());
+    const result = JSON.parse(cleanJSONText);
     
     if (result.action === 'update_routine' && Array.isArray(result.updatedRoutine)) {
       routine = result.updatedRoutine;
@@ -1370,6 +1380,14 @@ document.addEventListener('DOMContentLoaded', () => {
       clockTick();
     })
     .catch(() => {});
+  
+  // Show HTTPS Warning Banner if opened over secure connection (due to mixed content local proxy blocking)
+  if (window.location.protocol === 'https:' && window.location.hostname !== 'localhost') {
+    const warningBanner = document.getElementById('https-warning-banner');
+    if (warningBanner) {
+      warningBanner.classList.remove('hidden');
+    }
+  }
   
   // UI bindings
   const simToggle = document.getElementById('sim-toggle');
