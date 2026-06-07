@@ -153,6 +153,24 @@
               <span class="label-xs">At Time</span>
               <span class="val-sm" id="next-task-time">06:15 AM</span>
             </div>
+        </section>
+
+        <!-- AI Routine Assistant Card -->
+        <section class="card ai-assistant-card">
+          <div class="card-header">
+            <h2 class="card-title"><i data-lucide="bot" class="icon-cyan"></i> AI Routine Assistant</h2>
+            <span class="badge badge-active" style="background: rgba(6, 182, 212, 0.12); color: var(--cyan); border: 1px solid rgba(6, 182, 212, 0.25);">Online</span>
+          </div>
+          <div class="ai-assistant-content">
+            <div class="chat-history" id="ai-chat-history">
+              <div class="chat-bubble bot-bubble">
+                <p>Hello Shivam! I am your AI Routine Assistant. Tell me what changes you want to make in your schedule (e.g., <em>"change gym to 4 PM to 5 PM"</em>) and I will update it instantly!</p>
+              </div>
+            </div>
+            <div class="chat-input-area" style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+              <input type="text" id="ai-chat-input" placeholder="Ask AI to change routine..." class="input-xs" style="flex-grow: 1;">
+              <button id="ai-chat-send-btn" class="btn btn-primary btn-xs" style="padding: 0.35rem 0.5rem;"><i data-lucide="send" style="width: 14px; height: 14px;"></i></button>
+            </div>
           </div>
         </section>
 

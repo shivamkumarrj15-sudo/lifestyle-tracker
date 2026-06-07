@@ -24,7 +24,9 @@ const STATE = {
   snoozedUntil: null,
   analyticsView: 'weekly',
   currentDayProgress: { date: '', tasks: {} }, // Live tasks checked today: { taskId: boolean }
-  lastActiveTaskId: null
+  lastActiveTaskId: null,
+  customDefaultRoutine: null,
+  customSchoolRoutine: null
 };
 
 // Web Audio API Alarm Sounds
@@ -140,6 +142,8 @@ function saveToLocalStorage() {
   localStorage.setItem('lifestyle_soundEnabled', JSON.stringify(STATE.soundEnabled));
   localStorage.setItem('lifestyle_unreadMails', JSON.stringify(STATE.unreadMails));
   localStorage.setItem('lifestyle_currentDayProgress', JSON.stringify(STATE.currentDayProgress));
+  localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(STATE.customDefaultRoutine));
+  localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(STATE.customSchoolRoutine));
 }
 
 function loadFromLocalStorage() {
@@ -150,6 +154,8 @@ function loadFromLocalStorage() {
   STATE.soundEnabled = localStorage.getItem('lifestyle_soundEnabled') !== 'false';
   STATE.unreadMails = JSON.parse(localStorage.getItem('lifestyle_unreadMails')) || [];
   STATE.currentDayProgress = JSON.parse(localStorage.getItem('lifestyle_currentDayProgress')) || { date: '', tasks: {} };
+  STATE.customDefaultRoutine = JSON.parse(localStorage.getItem('lifestyle_customDefaultRoutine')) || null;
+  STATE.customSchoolRoutine = JSON.parse(localStorage.getItem('lifestyle_customSchoolRoutine')) || null;
 }
 
 // Check and verify current day progress consistency
@@ -166,17 +172,23 @@ function getCurrentRoutine() {
   const thresholdDate = new Date('2026-06-19T00:00:00');
   
   if (STATE.currentTime >= thresholdDate) {
-    STATE.alarms.wakeUp = '05:00';
-    STATE.alarms.sleep = '22:30';
+    const routine = STATE.customSchoolRoutine || SCHOOL_ROUTINE;
+    const wakeTask = routine.find(t => t.id === 'wake_up');
+    const sleepTask = routine.find(t => t.id === 'sleep_alarm');
+    STATE.alarms.wakeUp = wakeTask ? wakeTask.start : '05:00';
+    STATE.alarms.sleep = sleepTask ? sleepTask.start : '22:30';
     document.getElementById('routine-mode-badge').textContent = "School Mode";
     document.getElementById('routine-mode-badge').className = "badge badge-orange";
-    return SCHOOL_ROUTINE;
+    return routine;
   } else {
-    STATE.alarms.wakeUp = '05:30';
-    STATE.alarms.sleep = '22:30';
+    const routine = STATE.customDefaultRoutine || DEFAULT_ROUTINE;
+    const wakeTask = routine.find(t => t.id === 'wake_up');
+    const sleepTask = routine.find(t => t.id === 'sleep_alarm');
+    STATE.alarms.wakeUp = wakeTask ? wakeTask.start : '05:30';
+    STATE.alarms.sleep = sleepTask ? sleepTask.start : '22:30';
     document.getElementById('routine-mode-badge').textContent = "Holiday Mode";
     document.getElementById('routine-mode-badge').className = "badge badge-sim";
-    return DEFAULT_ROUTINE;
+    return routine;
   }
 }
 
@@ -1136,6 +1148,116 @@ function clockTick() {
   }
 }
 
+// AI Routine Assistant NLP Parser
+function parseNaturalTime(str) {
+  str = str.toLowerCase().trim();
+  const hhmm = str.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/);
+  let hrs = 0;
+  let mins = 0;
+  let hasTime = false;
+  let isPm = false;
+  let isAm = false;
+  
+  if (hhmm) {
+    hrs = parseInt(hhmm[1]);
+    mins = parseInt(hhmm[2]);
+    if (hhmm[3] === 'pm') isPm = true;
+    if (hhmm[3] === 'am') isAm = true;
+    hasTime = true;
+  } else {
+    const singleHr = str.match(/(\d{1,2})\s*(am|pm)?/);
+    if (singleHr) {
+      hrs = parseInt(singleHr[1]);
+      mins = 0;
+      if (singleHr[2] === 'pm') isPm = true;
+      if (singleHr[2] === 'am') isAm = true;
+      hasTime = true;
+    }
+  }
+  
+  if (!hasTime) return null;
+  
+  if ((str.includes('pm') || isPm) && hrs < 12) {
+    hrs += 12;
+  }
+  if ((str.includes('am') || isAm) && hrs === 12) {
+    hrs = 0;
+  }
+  
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function parseNaturalTimeRange(str) {
+  const parts = str.split(/to|-/);
+  if (parts.length >= 2) {
+    const t1 = parseNaturalTime(parts[0]);
+    const t2 = parseNaturalTime(parts[1]);
+    if (t1 && t2) return [t1, t2];
+  }
+  const t = parseNaturalTime(str);
+  return t ? [t, null] : null;
+}
+
+function processAIChatCommand(text) {
+  const isSchoolMode = STATE.currentTime >= new Date('2026-06-19T00:00:00');
+  let routine = isSchoolMode 
+    ? (STATE.customSchoolRoutine ? [...STATE.customSchoolRoutine] : [...SCHOOL_ROUTINE])
+    : (STATE.customDefaultRoutine ? [...STATE.customDefaultRoutine] : [...DEFAULT_ROUTINE]);
+
+  text = text.toLowerCase().trim();
+  
+  let timeRange = parseNaturalTimeRange(text);
+  let matchedTask = null;
+  
+  for (const task of routine) {
+    const keywords = task.name.toLowerCase().split(/[\s,&]+/);
+    if (keywords.some(kw => kw.length > 2 && text.includes(kw)) || 
+        text.includes(task.id) || 
+        (task.id === 'gym' && text.includes('gym')) ||
+        (task.id === 'wake_up' && (text.includes('wake') || text.includes('alarm') || text.includes('uthna')))) {
+      matchedTask = task;
+      break;
+    }
+  }
+  
+  if (matchedTask && timeRange) {
+    const [start, end] = timeRange;
+    const oldDuration = timeStrToMins(matchedTask.end) - timeStrToMins(matchedTask.start);
+    matchedTask.start = start;
+    if (end) {
+      matchedTask.end = end;
+    } else {
+      const startMins = timeStrToMins(start);
+      const endMins = (startMins + oldDuration) % 1440;
+      const hrs = Math.floor(endMins / 60);
+      const mins = endMins % 60;
+      matchedTask.end = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    }
+    
+    routine.sort((a, b) => timeStrToMins(a.start) - timeStrToMins(b.start));
+    
+    if (isSchoolMode) {
+      STATE.customSchoolRoutine = routine;
+      localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(routine));
+    } else {
+      STATE.customDefaultRoutine = routine;
+      localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(routine));
+    }
+    saveToLocalStorage();
+    
+    STATE.lastActiveTaskId = null;
+    clockTick();
+    
+    return `Sure Shivam! I have updated your routine. **${matchedTask.name}** is now scheduled from **${format12Hour(matchedTask.start)}** to **${format12Hour(matchedTask.end)}**. I have also updated your timeline display!`;
+  }
+  
+  if (text.includes('hi') || text.includes('hello') || text.includes('help') || text.includes('sun') || text.includes('listen')) {
+    return "Hello Shivam! I am your AI Assistant. Tell me how to change your routine. E.g.:\n- *'change gym to 4 PM to 5 PM'*\n- *'set wake up to 6:00 AM'*\n- *'change english speaking to 9 PM'*\nYour changes will update instantly!";
+  }
+  
+  return "I couldn't quite understand that command. Please mention the task name and the new time (e.g. 'change gym to 4 PM to 5:30 PM').";
+}
+
 // Initialise application
 document.addEventListener('DOMContentLoaded', () => {
   loadFromLocalStorage();
@@ -1303,6 +1425,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 31000);
   });
   // QR Code logic removed at user request
+  
+  // AI Routine Assistant Chat Event Listeners
+  const aiChatInput = document.getElementById('ai-chat-input');
+  const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
+  const aiChatHistory = document.getElementById('ai-chat-history');
+
+  const appendChatMessage = (text, sender) => {
+    const bubble = document.createElement('div');
+    bubble.className = `chat-bubble ${sender === 'user' ? 'user-bubble' : 'bot-bubble'}`;
+    bubble.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+    aiChatHistory.appendChild(bubble);
+    aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+  };
+
+  const handleAiMessageSend = () => {
+    const text = aiChatInput.value.trim();
+    if (!text) return;
+
+    appendChatMessage(text, 'user');
+    aiChatInput.value = '';
+
+    setTimeout(() => {
+      const response = processAIChatCommand(text);
+      appendChatMessage(response, 'bot');
+    }, 400);
+  };
+
+  aiChatSendBtn.addEventListener('click', handleAiMessageSend);
+  aiChatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleAiMessageSend();
+  });
   
   // New Skill Selector Buttons
   document.getElementById('skill-complete-btn').addEventListener('click', () => {
