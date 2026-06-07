@@ -1148,7 +1148,7 @@ function clockTick() {
   }
 }
 
-// AI Routine Assistant NLP Parser
+// AI Routine Assistant NLP Parser & Counselor
 async function processAIChatCommand(text) {
   const isSchoolMode = STATE.currentTime >= new Date('2026-06-19T00:00:00');
   let routine = isSchoolMode 
@@ -1164,19 +1164,41 @@ async function processAIChatCommand(text) {
 
   const cleanTasks = routine.map(t => ({ id: t.id, name: t.name, start: t.start, end: t.end, desc: t.desc }));
   
-  const systemInstruction = `You are a schedule manager. The user wants to change their daily routine.
-Current tasks:
+  const systemInstruction = `You are Shivam's personal Lifestyle AI Assistant.
+Here is Shivam's current routine:
 ${JSON.stringify(cleanTasks)}
 
-Analyze their query: "${text}".
-Identify which task they want to modify, and what the new times should be.
-Return a raw JSON object with:
-{
-  "matchedTaskId": "id_of_task_or_null",
-  "newStart": "HH:MM_format_or_null",
-  "newEnd": "HH:MM_format_or_null",
-  "response": "Brief friendly confirmation message in Hindi/Hinglish (e.g. 'Sure Shivam! Maine Gym ka time badalkar...')"
-}
+Here are the Diet Plans available:
+${JSON.stringify(DIET_PLANS)}
+
+Here is the Skills Database for learning:
+${JSON.stringify(SKILLS_DATABASE)}
+
+Your job:
+1. If Shivam wants to CHANGE or modify his routine times (e.g. 'change gym to 4 PM to 5 PM', 'set wake up alarm to 6:00 AM'):
+   Return a raw JSON object ONLY:
+   {
+     "action": "modify",
+     "matchedTaskId": "id_of_task",
+     "newStart": "HH:MM",
+     "newEnd": "HH:MM",
+     "response": "Brief friendly confirmation in Hindi/Hinglish (e.g. 'Sure Shivam! Maine Gym ka time badalkar...')"
+   }
+   
+2. If Shivam asks a question ABOUT his routine, what to do in the gym, what to eat, or what skills to learn (e.g. 'gym me kya karna hai', 'diet details', 'new skill modules', 'english practice tips'):
+   Answer his question accurately and helpfully in a friendly Hinglish/Hindi tone based on the data above. Return a raw JSON object:
+   {
+     "action": "answer",
+     "response": "Your detailed answer in Hindi/Hinglish with clear bullet points"
+   }
+   
+3. If Shivam asks ANY other general question not related to his routine, gym, diet, or skills (e.g. general knowledge, writing code, mathematical calculations, other off-topic stuff):
+   You MUST politely decline to answer. Return a raw JSON object:
+   {
+     "action": "decline",
+     "response": "Sorry Shivam, main sirf aapke daily routine, gym workout, diet plan aur skills se jude sawalon ke jawab de sakta hoon."
+   }
+
 Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
 
   try {
@@ -1191,7 +1213,8 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages: [
-          { role: 'user', content: systemInstruction }
+          { role: 'user', content: systemInstruction },
+          { role: 'user', content: text }
         ],
         temperature: 0.1
       })
@@ -1207,7 +1230,7 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
     replyText = replyText.replace(/^```json/i, '').replace(/```$/, '').trim();
     const result = JSON.parse(replyText);
     
-    if (result.matchedTaskId && result.newStart) {
+    if (result.action === 'modify' && result.matchedTaskId && result.newStart) {
       const taskIndex = routine.findIndex(t => t.id === result.matchedTaskId);
       if (taskIndex !== -1) {
         routine[taskIndex].start = result.newStart;
@@ -1236,12 +1259,10 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
         
         STATE.lastActiveTaskId = null;
         clockTick();
-        
-        return result.response || `Routine updated successfully for ${routine[taskIndex].name}.`;
       }
     }
     
-    return result.response || "I couldn't match a task or find a new time in your request. Please try again.";
+    return result.response || "I couldn't process your request.";
   } catch (err) {
     console.error('AI parse error:', err);
     return "Sorry Shivam, I encountered an error connecting to OpenRouter. Please check your API key in the settings panel.";
@@ -1426,6 +1447,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const aiApiKeySave = document.getElementById('ai-api-key-save');
 
   // Load OpenRouter key
+  if (!localStorage.getItem('lifestyle_openrouter_key')) {
+    fetch('local_config.json')
+      .then(res => res.json())
+      .then(config => {
+        if (config.openrouterKey) {
+          localStorage.setItem('lifestyle_openrouter_key', config.openrouterKey);
+          aiApiKeyInput.value = config.openrouterKey;
+        }
+      })
+      .catch(err => {
+        console.log("Local config not found. Manual setup available.");
+      });
+  }
   aiApiKeyInput.value = localStorage.getItem('lifestyle_openrouter_key') || '';
 
   aiSettingsBtn.addEventListener('click', () => {
