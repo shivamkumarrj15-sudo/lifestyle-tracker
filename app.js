@@ -960,7 +960,7 @@ function handleGoogleSync() {
   const statusEl = document.getElementById('gapi-status');
   statusEl.textContent = "Loading Google API client...";
   
-  if (!window.google) {
+  if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
     const script = document.createElement('script');
     script.src = "https://accounts.google.com/gsi/client";
     script.onload = () => initGoogleAuth(clientId);
