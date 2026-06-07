@@ -1210,29 +1210,66 @@ Your job:
 Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
 
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    let data;
+    let success = false;
+  
+  // 1. Try local Node backend API proxy first
+  try {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const localApiUrl = isLocalhost ? '/api/ai' : 'http://localhost:8080/api/ai';
+    
+    const proxyRes = await fetch(localApiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'Lifestyle Tracker'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'user', content: systemInstruction },
-          { role: 'user', content: text }
-        ],
-        temperature: 0.1
+        text: text,
+        systemInstruction: systemInstruction
       })
     });
     
-    if (!res.ok) {
-      throw new Error(`OpenRouter HTTP error: ${res.status}`);
+    if (proxyRes.ok) {
+      data = await proxyRes.json();
+      success = true;
+      console.log("Successfully fetched AI response via local backend proxy.");
     }
-    
-    const data = await res.json();
+  } catch (err) {
+    console.warn("Local AI proxy failed, trying direct browser fallback...", err);
+  }
+  
+  // 2. Direct browser fallback to OpenRouter (omitting CORS-incompatible custom headers)
+  if (!success) {
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+          // We omit HTTP-Referer and X-Title to prevent browser CORS preflight blocks
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'user', content: systemInstruction },
+            { role: 'user', content: text }
+          ],
+          temperature: 0.1,
+          max_tokens: 1000
+        })
+      });
+      
+      if (!res.ok) {
+        throw new Error(`OpenRouter HTTP error: ${res.status}`);
+      }
+      
+      data = await res.json();
+      success = true;
+    } catch (fallbackErr) {
+      console.error('AI fallback error:', fallbackErr);
+      throw new Error("Failed to connect to AI server: " + fallbackErr.message);
+    }
+  }
     let replyText = data.choices[0].message.content.trim();
     
     replyText = replyText.replace(/^```json/i, '').replace(/```$/, '').trim();
