@@ -1373,7 +1373,7 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
     return result.response || "I couldn't process your request.";
   } catch (err) {
     console.error('AI parse error:', err);
-    return "Sorry Shivam, I encountered an error connecting to OpenRouter. Please check your API key in the settings panel.";
+    return `Error: ${err.message || err}. (Please verify your API key in the settings ⚙️ above or check browser console).`;
   }
 }
 
@@ -1641,7 +1641,7 @@ document.addEventListener('DOMContentLoaded', () => {
       appendChatMessage(response, 'bot');
     } catch (err) {
       typingIndicator.remove();
-      appendChatMessage("Sorry, I encountered an error. Please try again.", 'bot');
+      appendChatMessage(`Error: ${err.message || err}. Please try again.`, 'bot');
     }
   };
 
