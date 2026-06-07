@@ -1000,8 +1000,13 @@ async function syncToGoogleCalendarAPI(accessToken) {
     const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
-    const calendarList = await listRes.json();
     
+    if (!listRes.ok) {
+      const errData = await listRes.json().catch(() => ({}));
+      throw new Error(errData.error?.message || `Auth failed: HTTP ${listRes.status}`);
+    }
+    
+    const calendarList = await listRes.json();
     let calendarId = 'primary';
     let lifestyleCalendar = calendarList.items.find(item => item.summary === 'Lifestyle Automation');
     
@@ -1017,40 +1022,39 @@ async function syncToGoogleCalendarAPI(accessToken) {
         },
         body: JSON.stringify({ summary: "Lifestyle Automation" })
       });
+      if (!createRes.ok) {
+        const errData = await createRes.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `Calendar creation failed`);
+      }
       const newCal = await createRes.json();
       calendarId = newCal.id;
     }
     
     const referenceTime = new Date(STATE.currentTime);
-
-    // Deduplication: Clear events for the next 7 days
     const rangeStart = new Date(referenceTime);
     rangeStart.setHours(0, 0, 0, 0);
     const rangeEnd = new Date(referenceTime);
     rangeEnd.setDate(rangeEnd.getDate() + 7);
     rangeEnd.setHours(23, 59, 59, 999);
 
-    statusEl.textContent = "Clearing old events from calendar...";
+    statusEl.textContent = "Fetching existing calendar events...";
     const listEventsRes = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?timeMin=${rangeStart.toISOString()}&timeMax=${rangeEnd.toISOString()}&singleEvents=true`, 
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?timeMin=${rangeStart.toISOString()}&timeMax=${rangeEnd.toISOString()}&singleEvents=true`, 
       {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       }
     );
-    if (listEventsRes.ok) {
-      const eventList = await listEventsRes.json();
-      const events = eventList.items || [];
-      for (const event of events) {
-        await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${event.id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-      }
-      console.log(`Cleared ${events.length} old calendar events.`);
-    }
-
-    statusEl.textContent = "Creating routine events in Google Calendar...";
     
+    if (!listEventsRes.ok) {
+      const errData = await listEventsRes.json().catch(() => ({}));
+      throw new Error(errData.error?.message || `Failed to fetch events`);
+    }
+    
+    const eventList = await listEventsRes.json();
+    const existingEvents = eventList.items || [];
+
+    // Compute desired events
+    const desiredEvents = [];
     for (let d = 0; d < 7; d++) {
       const loopDate = new Date(referenceTime);
       loopDate.setDate(loopDate.getDate() + d);
@@ -1059,6 +1063,11 @@ async function syncToGoogleCalendarAPI(accessToken) {
       const routine = loopDate >= thresholdDate 
         ? (STATE.customSchoolRoutine || SCHOOL_ROUTINE) 
         : (STATE.customDefaultRoutine || DEFAULT_ROUTINE);
+      
+      const yyyy = loopDate.getFullYear();
+      const mm = String(loopDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(loopDate.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
       
       for (const task of routine) {
         if (task.type === 'alarm') continue;
@@ -1082,35 +1091,146 @@ async function syncToGoogleCalendarAPI(accessToken) {
           if (skill) displayName = `Learn: ${skill.name}`;
         }
         
-        const eventData = {
+        desiredEvents.push({
+          taskId: task.id,
+          dateStr: dateStr,
           summary: displayName,
           description: task.desc,
-          start: { dateTime: eventStart.toISOString() },
-          end: { dateTime: eventEnd.toISOString() },
-          reminders: {
-            useDefault: false,
-            overrides: [
-              { method: 'popup', minutes: 10 },
-              { method: 'popup', minutes: 0 } 
-            ]
-          }
-        };
-        
-        await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(eventData)
+          startIso: eventStart.toISOString(),
+          endIso: eventEnd.toISOString()
         });
       }
+    }
+
+    const toCreate = [];
+    const toUpdate = [];
+    const toDelete = [];
+
+    const existingMap = {};
+    existingEvents.forEach(evt => {
+      const privateProps = evt.extendedProperties?.private || {};
+      const taskId = privateProps.taskId;
+      const dateStr = privateProps.dateStr;
+      
+      if (taskId && dateStr) {
+        existingMap[`${taskId}_${dateStr}`] = evt;
+      } else {
+        toDelete.push(evt); // Delete any untagged event in our calendar
+      }
+    });
+
+    desiredEvents.forEach(desired => {
+      const key = `${desired.taskId}_${desired.dateStr}`;
+      const existing = existingMap[key];
+      
+      if (existing) {
+        const extStart = existing.start.dateTime;
+        const extEnd = existing.end.dateTime;
+        const extSummary = existing.summary;
+        const extDesc = existing.description;
+        
+        const startDiff = Math.abs(new Date(extStart).getTime() - new Date(desired.startIso).getTime());
+        const endDiff = Math.abs(new Date(extEnd).getTime() - new Date(desired.endIso).getTime());
+        
+        if (
+          extSummary !== desired.summary ||
+          extDesc !== desired.description ||
+          startDiff > 1000 ||
+          endDiff > 1000
+        ) {
+          toUpdate.push({
+            eventId: existing.id,
+            desired: desired
+          });
+        }
+        delete existingMap[key];
+      } else {
+        toCreate.push(desired);
+      }
+    });
+
+    Object.values(existingMap).forEach(evt => {
+      toDelete.push(evt);
+    });
+
+    statusEl.textContent = `Syncing: ${toCreate.length} new, ${toUpdate.length} updates, ${toDelete.length} deletions...`;
+
+    // Process deletes
+    for (const evt of toDelete) {
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${evt.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+    }
+
+    // Process updates
+    for (const item of toUpdate) {
+      const eventData = {
+        summary: item.desired.summary,
+        description: item.desired.description,
+        start: { dateTime: item.desired.startIso },
+        end: { dateTime: item.desired.endIso },
+        extendedProperties: {
+          private: {
+            taskId: item.desired.taskId,
+            dateStr: item.desired.dateStr
+          }
+        },
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: 'popup', minutes: 10 },
+            { method: 'popup', minutes: 0 }
+          ]
+        }
+      };
+      
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${item.eventId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(eventData)
+      });
+    }
+
+    // Process creates
+    for (const desired of toCreate) {
+      const eventData = {
+        summary: desired.summary,
+        description: desired.description,
+        start: { dateTime: desired.startIso },
+        end: { dateTime: desired.endIso },
+        extendedProperties: {
+          private: {
+            taskId: desired.taskId,
+            dateStr: desired.dateStr
+          }
+        },
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: 'popup', minutes: 10 },
+            { method: 'popup', minutes: 0 }
+          ]
+        }
+      };
+      
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(eventData)
+      });
     }
     
     statusEl.textContent = "Success! Synced automatically. Check phone calendar!";
     statusEl.style.color = "var(--emerald)";
   } catch (err) {
-    statusEl.textContent = "Sync failed. Verify Client ID.";
+    statusEl.textContent = "Sync failed: " + (err.message || err);
     statusEl.style.color = "#ef4444";
     console.error(err);
   }
@@ -1472,10 +1592,55 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
 // Initialise application
 document.addEventListener('DOMContentLoaded', () => {
   loadFromLocalStorage();
+  autoSyncGoogleCalendar();
   
   // Try loading custom routines from local server if available
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const serverBase = isLocalhost ? '' : 'http://localhost:8080';
+  
+  // Dynamic IP Fetch & QR Code Generation
+  const infoUrl = isLocalhost ? '/api/info' : 'http://localhost:8080/api/info';
+  fetch(infoUrl)
+    .then(res => { if (res.ok) return res.json(); throw new Error(); })
+    .then(info => {
+      const localUrl = `http://${info.localIP}:${info.port}`;
+      const mobileLink = document.getElementById('local-mobile-link');
+      if (mobileLink) {
+        mobileLink.href = localUrl;
+        mobileLink.textContent = localUrl;
+      }
+      
+      const qrImg = document.getElementById('qr-code-img');
+      const qrLinkText = document.getElementById('qr-code-link-text');
+      if (qrImg) {
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(localUrl + '/')}`;
+      }
+      if (qrLinkText) {
+        qrLinkText.textContent = localUrl;
+      }
+    })
+    .catch(() => {
+      const qrImg = document.getElementById('qr-code-img');
+      const qrLinkText = document.getElementById('qr-code-link-text');
+      if (isLocalhost) {
+        const localUrl = window.location.origin;
+        if (qrImg) {
+          qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(localUrl + '/')}`;
+        }
+        if (qrLinkText) {
+          qrLinkText.textContent = localUrl;
+        }
+      } else {
+        if (qrImg) {
+          qrImg.alt = "Local server offline. Run 'node sync.js' to enable mobile sync & QR code.";
+          qrImg.style.display = 'none';
+        }
+        if (qrLinkText) {
+          qrLinkText.textContent = "Run local daemon (node sync.js) to view QR Code";
+          qrLinkText.style.color = "var(--text-muted)";
+        }
+      }
+    });
   
   fetch(`${serverBase}/custom_default_routine.json`)
     .then(res => { if (res.ok) return res.json(); throw new Error(); })

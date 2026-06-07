@@ -25,11 +25,11 @@ export const DEFAULT_ROUTINE = [
 ];
 
 export const SCHOOL_ROUTINE = [
-  { id: 'sleep_1', start: '00:00', end: '05:00', name: 'Deep Sleep', type: 'sleep', desc: 'Restorative deep sleep for cell recovery and brain health.' },
-  { id: 'wake_up', start: '05:00', end: '05:00', name: 'Wake Up Alarm', type: 'alarm', desc: 'Wake up, hydrate, and start the day.' },
-  { id: 'morning_prep', start: '05:00', end: '05:45', name: 'Meditation, Brushing & Hydration', type: 'health', desc: 'Brush teeth, drink 500ml warm water, and perform 20 mins mindfulness meditation.' },
-  { id: 'breakfast', start: '05:45', end: '06:15', name: 'Quick Breakfast', type: 'diet', desc: 'Nutrient-rich early breakfast before heading to school.' },
-  { id: 'commute_school', start: '06:15', end: '07:00', name: 'Travel to School', type: 'health', desc: 'Commuting to school, light stretching.' },
+  { id: 'sleep_1', start: '00:00', end: '05:30', name: 'Deep Sleep', type: 'sleep', desc: 'Restorative deep sleep for cell recovery and brain health.' },
+  { id: 'wake_up', start: '05:30', end: '05:30', name: 'Wake Up Alarm', type: 'alarm', desc: 'Wake up, hydrate, and start the day.' },
+  { id: 'morning_prep', start: '05:30', end: '06:00', name: 'Meditation, Brushing & Hydration', type: 'health', desc: 'Brush teeth, drink 500ml warm water, and perform 20 mins mindfulness meditation.' },
+  { id: 'breakfast', start: '06:00', end: '06:20', name: 'Quick Breakfast', type: 'diet', desc: 'Nutrient-rich early breakfast before heading to school.' },
+  { id: 'commute_school', start: '06:20', end: '07:00', name: 'Travel to School', type: 'health', desc: 'Commuting to school, light stretching.' },
   { id: 'school_classes', start: '07:00', end: '12:00', name: 'School Classes', type: 'learning', desc: 'Active study, class lectures, and academic learning.' },
   { id: 'lunch_rest', start: '12:00', end: '13:00', name: 'Return & Healthy Lunch', type: 'diet', desc: 'Return home, consume a balanced high-protein lunch, and rest.' },
   { id: 'trading_info', start: '13:00', end: '14:00', name: 'Trading Info & News', type: 'trading', desc: 'Analyze morning market moves, news updates, and financial logs.' },

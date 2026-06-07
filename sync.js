@@ -136,7 +136,7 @@ async function syncCalendar(auth) {
     console.log(`Created calendar (ID: ${calendarId})`);
   }
 
-  // 2. Clear events for next 7 days to avoid duplicates and handle routine shifts
+  // 2. Fetch events for the next 7 days
   const now = new Date();
   const rangeStart = new Date(now);
   rangeStart.setHours(0, 0, 0, 0);
@@ -145,7 +145,7 @@ async function syncCalendar(auth) {
   rangeEnd.setDate(rangeEnd.getDate() + 7);
   rangeEnd.setHours(23, 59, 59, 999);
 
-  console.log(`Clearing events from ${rangeStart.toDateString()} to ${rangeEnd.toDateString()}...`);
+  console.log(`Fetching existing events from ${rangeStart.toDateString()} to ${rangeEnd.toDateString()}...`);
   const eventsRes = await calendar.events.list({
     calendarId,
     timeMin: rangeStart.toISOString(),
@@ -153,21 +153,19 @@ async function syncCalendar(auth) {
     singleEvents: true
   });
 
-  const events = eventsRes.data.items || [];
-  for (const event of events) {
-    await calendar.events.delete({
-      calendarId,
-      eventId: event.id
-    });
-  }
-  console.log(`Deleted ${events.length} existing events.`);
+  const existingEvents = eventsRes.data.items || [];
 
-  // 3. Write routine events for the next 7 days
-  console.log('Writing new routine events into Google Calendar...');
+  // 3. Compute desired events
+  const desiredEvents = [];
   for (let d = 0; d < 7; d++) {
     const loopDate = new Date(now);
     loopDate.setDate(loopDate.getDate() + d);
     const routine = getRoutineForDate(loopDate);
+    
+    const yyyy = loopDate.getFullYear();
+    const mm = String(loopDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(loopDate.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
     
     for (const task of routine) {
       if (task.type === 'alarm') continue; // Skip alert entries
@@ -185,26 +183,144 @@ async function syncCalendar(auth) {
         eventEnd.setHours(endHrs, endMins, 0, 0);
       }
       
-      const eventData = {
+      desiredEvents.push({
+        taskId: task.id,
+        dateStr: dateStr,
         summary: task.name,
         description: task.desc,
-        start: { dateTime: eventStart.toISOString() },
-        end: { dateTime: eventEnd.toISOString() },
+        startIso: eventStart.toISOString(),
+        endIso: eventEnd.toISOString()
+      });
+    }
+  }
+
+  // 4. Perform Differential Comparison
+  const toCreate = [];
+  const toUpdate = [];
+  const toDelete = [];
+
+  const existingMap = {};
+  existingEvents.forEach(evt => {
+    const privateProps = evt.extendedProperties?.private || {};
+    const taskId = privateProps.taskId;
+    const dateStr = privateProps.dateStr;
+    
+    if (taskId && dateStr) {
+      existingMap[`${taskId}_${dateStr}`] = evt;
+    } else {
+      toDelete.push(evt); // Clean out any untagged event in our calendar
+    }
+  });
+
+  desiredEvents.forEach(desired => {
+    const key = `${desired.taskId}_${desired.dateStr}`;
+    const existing = existingMap[key];
+    
+    if (existing) {
+      const extStart = existing.start.dateTime;
+      const extEnd = existing.end.dateTime;
+      const extSummary = existing.summary;
+      const extDesc = existing.description;
+      
+      const startDiff = Math.abs(new Date(extStart).getTime() - new Date(desired.startIso).getTime());
+      const endDiff = Math.abs(new Date(extEnd).getTime() - new Date(desired.endIso).getTime());
+      
+      if (
+        extSummary !== desired.summary ||
+        extDesc !== desired.description ||
+        startDiff > 1000 ||
+        endDiff > 1000
+      ) {
+        toUpdate.push({
+          eventId: existing.id,
+          desired: desired
+        });
+      }
+      delete existingMap[key];
+    } else {
+      toCreate.push(desired);
+    }
+  });
+
+  Object.values(existingMap).forEach(evt => {
+    toDelete.push(evt);
+  });
+
+  console.log(`Google Calendar Sync status: ${toCreate.length} to create, ${toUpdate.length} to update, ${toDelete.length} to delete.`);
+
+  // 5. Execute API changes
+  for (const evt of toDelete) {
+    try {
+      await calendar.events.delete({
+        calendarId,
+        eventId: evt.id
+      });
+    } catch (err) {
+      console.error(`Failed to delete event ${evt.id}:`, err.message);
+    }
+  }
+
+  for (const item of toUpdate) {
+    try {
+      const eventData = {
+        summary: item.desired.summary,
+        description: item.desired.description,
+        start: { dateTime: item.desired.startIso },
+        end: { dateTime: item.desired.endIso },
+        extendedProperties: {
+          private: {
+            taskId: item.desired.taskId,
+            dateStr: item.desired.dateStr
+          }
+        },
         reminders: {
           useDefault: false,
           overrides: [
             { method: 'popup', minutes: 10 },
-            { method: 'popup', minutes: 0 } // Ring alarm/notification at event time
+            { method: 'popup', minutes: 0 }
           ]
         }
       };
+      await calendar.events.update({
+        calendarId,
+        eventId: item.eventId,
+        requestBody: eventData
+      });
+    } catch (err) {
+      console.error(`Failed to update event ${item.eventId}:`, err.message);
+    }
+  }
 
+  for (const desired of toCreate) {
+    try {
+      const eventData = {
+        summary: desired.summary,
+        description: desired.description,
+        start: { dateTime: desired.startIso },
+        end: { dateTime: desired.endIso },
+        extendedProperties: {
+          private: {
+            taskId: desired.taskId,
+            dateStr: desired.dateStr
+          }
+        },
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: 'popup', minutes: 10 },
+            { method: 'popup', minutes: 0 }
+          ]
+        }
+      };
       await calendar.events.insert({
         calendarId,
         requestBody: eventData
       });
+    } catch (err) {
+      console.error(`Failed to create event ${desired.taskId} on ${desired.dateStr}:`, err.message);
     }
   }
+
   console.log('Google Calendar sync completed successfully!');
 }
 
@@ -392,7 +508,13 @@ function startHttpServer() {
       return;
     }
     
-    if (req.method === 'POST' && req.url === '/api/ai') {
+    if (req.method === 'GET' && req.url === '/api/info') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify({ localIP: getLocalIP(), port: 8080 }));
+    } else if (req.method === 'POST' && req.url === '/api/ai') {
       handleAIProxyRequest(req, res);
     } else if (req.method === 'POST' && req.url === '/api/save_routine') {
       handleSaveRoutineRequest(req, res);

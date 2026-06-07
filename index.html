@@ -259,7 +259,17 @@
               </div>
             </div>
             
-            <!-- Mobile QR section removed at user request -->
+            <hr class="sync-divider">
+            
+            <!-- Mobile QR Code Integration -->
+            <div class="sync-section" id="qr-code-section" style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.5rem;">
+              <h4>3. Scan to Open on Mobile</h4>
+              <p class="text-xs text-muted">Scan this QR code with your phone to open the dashboard locally (must be on same Wi-Fi network).</p>
+              <div id="qr-code-container" style="background: white; padding: 10px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <img id="qr-code-img" src="" alt="Loading QR Code..." style="width: 130px; height: 130px; display: block; border-radius: 4px;">
+              </div>
+              <div style="font-size: 0.75rem; font-weight: 600; color: var(--cyan); word-break: break-all;" id="qr-code-link-text">http://localhost:8080</div>
+            </div>
           </div>
         </section>
       </div>
