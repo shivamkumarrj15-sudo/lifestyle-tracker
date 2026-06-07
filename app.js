@@ -1319,13 +1319,13 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
           // We omit HTTP-Referer and X-Title to prevent browser CORS preflight blocks
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
+          model: 'google/gemma-4-31b-it:free',
           messages: [
             { role: 'user', content: systemInstruction },
             { role: 'user', content: text }
           ],
           temperature: 0.1,
-          max_tokens: 300
+          max_tokens: 1000
         })
       });
       

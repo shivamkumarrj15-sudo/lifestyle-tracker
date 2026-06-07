@@ -315,13 +315,13 @@ async function handleAIProxyRequest(req, res) {
           'X-Title': 'Lifestyle Tracker'
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
+          model: 'google/gemma-4-31b-it:free',
           messages: [
             { role: 'user', content: systemInstruction },
             { role: 'user', content: text }
           ],
           temperature: 0.1,
-          max_tokens: 300
+          max_tokens: 1000
         })
       });
       
