@@ -1447,7 +1447,22 @@ Do not write markdown formatting or wrap in backticks. Return ONLY raw JSON.`;
       autoSyncGoogleCalendar();
     }
     
-    return result.response || "I couldn't process your request.";
+    let finalResponse = result.response || "I couldn't process your request.";
+    
+    // Add Google Calendar sync status reminder
+    if (result.action === 'update_routine') {
+      const token = localStorage.getItem('lifestyle_gapi_token');
+      const expiry = localStorage.getItem('lifestyle_gapi_token_expiry');
+      const hasValidToken = token && expiry && Date.now() < Number(expiry);
+      
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      
+      if (!isLocalhost && !hasValidToken) {
+        finalResponse += "\n\n⚠️ **Google Calendar Sync Warning**: Hosted dashboard (GitHub Pages) requires direct browser authorization. Please click the **'Sync Google'** button at the bottom of the dashboard to connect your phone calendar once.";
+      }
+    }
+    
+    return finalResponse;
   } catch (err) {
     console.error('AI parse error:', err);
     return `Error: ${err.message || err}. (Please verify your API key in the settings ⚙️ above or check browser console).`;
