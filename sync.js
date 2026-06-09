@@ -13,6 +13,27 @@ const TOKEN_PATH = path.join(process.cwd(), 'token.json');
 const CONFIG_PATH = path.join(process.cwd(), 'email_config.json');
 const CUSTOM_DEFAULT_PATH = path.join(process.cwd(), 'custom_default_routine.json');
 const CUSTOM_SCHOOL_PATH = path.join(process.cwd(), 'custom_school_routine.json');
+const STATE_PATH = path.join(process.cwd(), 'sync_state.json');
+
+function loadSyncState() {
+  if (fs.existsSync(STATE_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(STATE_PATH, 'utf-8'));
+    } catch (e) {
+      console.error('Error reading sync state, resetting:', e);
+    }
+  }
+  return { lastSyncedDate: '', lastEmailedDate: '' };
+}
+
+function saveSyncState(state) {
+  try {
+    fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+  } catch (e) {
+    console.error('Error writing sync state:', e);
+  }
+}
+
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 
@@ -536,9 +557,6 @@ async function runDaemon(auth) {
   // Start local server serving static files and API proxy
   startHttpServer();
   
-  let lastSyncedDate = '';
-  let lastEmailedDate = '';
-  
   // Tick every 30 seconds
   setInterval(async () => {
     try {
@@ -546,16 +564,23 @@ async function runDaemon(auth) {
       const dateStr = now.toDateString();
       const hrs = now.getHours();
       const mins = now.getMinutes();
+      const currentMins = hrs * 60 + mins;
       
-      // 1. Sync Calendar once a day at 06:00 AM (or on startup)
-      if (auth && lastSyncedDate !== dateStr && hrs === 6 && mins === 0) {
-        lastSyncedDate = dateStr;
+      const state = loadSyncState();
+      
+      // 1. Sync Calendar once a day after 06:00 AM (catch up if missed)
+      if (auth && state.lastSyncedDate !== dateStr && currentMins >= 360) {
+        console.log(`Running daily calendar sync catch-up for ${dateStr}...`);
+        state.lastSyncedDate = dateStr;
+        saveSyncState(state);
         await syncCalendar(auth);
       }
       
-      // 2. Dispatch Daily Check-In Mail at 09:30 PM (21:30)
-      if (lastEmailedDate !== dateStr && hrs === 21 && mins === 30) {
-        lastEmailedDate = dateStr;
+      // 2. Dispatch Daily Check-In Mail after 09:30 PM (21:30) (catch up if missed)
+      if (state.lastEmailedDate !== dateStr && currentMins >= 1290) {
+        console.log(`Sending daily check-in email for ${dateStr}...`);
+        state.lastEmailedDate = dateStr;
+        saveSyncState(state);
         await sendDailyEmail();
       }
     } catch (err) {
@@ -583,6 +608,11 @@ async function main() {
     
     // Initial sync on run
     await syncCalendar(auth);
+    
+    // Update persistent state to note calendar synced today
+    const state = loadSyncState();
+    state.lastSyncedDate = new Date().toDateString();
+    saveSyncState(state);
   } catch (err) {
     console.warn('\n⚠️ Google Calendar API authorization skipped or failed:');
     console.warn(err.message || err);
