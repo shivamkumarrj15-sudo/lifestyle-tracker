@@ -4,5 +4,4 @@ token.json
 credentials.json
 .DS_Store
 .env
-custom_default_routine.json
-custom_school_routine.json
+sync_state.json

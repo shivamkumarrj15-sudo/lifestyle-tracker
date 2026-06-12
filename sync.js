@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import http from 'http';
 import querystring from 'querystring';
+import { exec } from 'child_process';
 import { authenticate } from '@google-cloud/local-auth';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
@@ -553,6 +554,15 @@ function handleSaveRoutineRequest(req, res) {
         console.log('Saved custom default routine to server.');
       }
       
+      // Auto-commit and push custom routines to GitHub
+      exec('git add custom_default_routine.json custom_school_routine.json && git commit -m "Auto-update custom routine from web panel [skip ci]" && git push origin main', (err, stdout, stderr) => {
+        if (err) {
+          console.warn("Failed to auto-push custom routine to GitHub:", err.message);
+        } else {
+          console.log("Successfully auto-pushed custom routine to GitHub!");
+        }
+      });
+      
       res.writeHead(200, { 
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*'
@@ -624,6 +634,12 @@ function handleEmailReportSubmission(req, res) {
       
       fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2));
       console.log(`Saved email check-in report for ${dateRaw}. Score: ${score}%`);
+      
+      // Auto-commit and push logs to GitHub
+      exec('git add daily_logs.json && git commit -m "Auto-update daily logs from email [skip ci]" && git push origin main', (err) => {
+        if (err) console.warn("Failed to auto-push logs to GitHub:", err.message);
+        else console.log("Successfully auto-pushed logs to GitHub!");
+      });
       
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`
@@ -755,6 +771,13 @@ function startHttpServer() {
           const logs = JSON.parse(body);
           const LOGS_PATH = path.join(process.cwd(), 'daily_logs.json');
           fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2));
+          
+          // Auto-commit and push logs to GitHub
+          exec('git add daily_logs.json && git commit -m "Auto-update daily logs from web [skip ci]" && git push origin main', (err) => {
+            if (err) console.warn("Failed to auto-push logs to GitHub:", err.message);
+            else console.log("Successfully auto-pushed logs to GitHub!");
+          });
+          
           res.writeHead(200, {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*'

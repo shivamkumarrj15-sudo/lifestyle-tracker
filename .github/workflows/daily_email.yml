@@ -1,0 +1,26 @@
+name: Daily Routine Check-In Email
+
+on:
+  schedule:
+    # 4:00 PM UTC is 9:30 PM Indian Standard Time (IST)
+    - cron: '0 16 * * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions UI
+
+jobs:
+  send-email:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Send Daily Email
+        run: node sync.js --send-email

@@ -1,0 +1,154 @@
+[
+  {
+    "id": "sleep_1",
+    "start": "00:00",
+    "end": "05:30",
+    "name": "Deep Sleep",
+    "type": "sleep",
+    "desc": "Restorative deep sleep for cell recovery and brain health."
+  },
+  {
+    "id": "trading_info",
+    "start": "05:30",
+    "end": "07:00",
+    "name": "Trading Info & News",
+    "type": "trading",
+    "desc": "Analyze global indices, SGX/Gift Nifty, macro news, and plan trading levels."
+  },
+  {
+    "id": "morning_walk",
+    "start": "07:00",
+    "end": "07:45",
+    "name": "Morning Walk / Light Stretch",
+    "type": "health",
+    "desc": "Light cardio walk in nature and dynamic stretching to activate muscles."
+  },
+  {
+    "id": "pre_workout_meal",
+    "start": "07:45",
+    "end": "08:15",
+    "name": "Pre-Workout Meal",
+    "type": "diet",
+    "desc": "Quick digesting carbs and hydration before hitting the gym."
+  },
+  {
+    "id": "gym",
+    "start": "08:15",
+    "end": "09:45",
+    "name": "Gym & Exercise Workout",
+    "type": "health",
+    "desc": "Resistance training / Heavy lifting session targeting specific muscle groups."
+  },
+  {
+    "id": "post_gym_diet",
+    "start": "09:45",
+    "end": "10:45",
+    "name": "Post-Gym Diet & Shower",
+    "type": "diet",
+    "desc": "High-protein meal / whey shake, refreshing warm shower, and recovery."
+  },
+  {
+    "id": "business_learning",
+    "start": "10:45",
+    "end": "12:15",
+    "name": "Business Learning & Finance",
+    "type": "learning",
+    "desc": "Learn business models, microeconomics, financial statements, or startup marketing."
+  },
+  {
+    "id": "lunch",
+    "start": "12:15",
+    "end": "13:15",
+    "name": "Healthy Lunch & Rest",
+    "type": "diet",
+    "desc": "High-fiber, high-protein balanced lunch followed by a short rest."
+  },
+  {
+    "id": "trading_charts",
+    "start": "13:15",
+    "end": "14:15",
+    "name": "Trading Chart Analysis",
+    "type": "trading",
+    "desc": "Practice technical charting, support/resistance, price action patterns, and backtesting."
+  },
+  {
+    "id": "content_creation",
+    "start": "14:15",
+    "end": "15:45",
+    "name": "Content Creation (Testing)",
+    "type": "creative",
+    "desc": "Record 2-4 test videos, practice editing, camera presence, and script pacing."
+  },
+  {
+    "id": "new_skill",
+    "start": "15:45",
+    "end": "16:45",
+    "name": "New Skill Learning",
+    "type": "new_skill",
+    "desc": "Interactive skill learning session. Controlled dynamically by the automation engine."
+  },
+  {
+    "id": "english_learning",
+    "start": "16:45",
+    "end": "17:45",
+    "name": "English Speaking & Practice",
+    "type": "learning",
+    "desc": "Practice conversational grammar, speak in front of a mirror, read aloud, or watch English videos."
+  },
+  {
+    "id": "friends_time",
+    "start": "17:45",
+    "end": "18:45",
+    "name": "Park & Playing with Friends",
+    "type": "social",
+    "desc": "Meet friends in the park, play badminton/cricket, or walk. Social connection."
+  },
+  {
+    "id": "dinner",
+    "start": "18:45",
+    "end": "19:15",
+    "name": "Healthy Dinner",
+    "type": "diet",
+    "desc": "Light dinner with complex carbs and protein to prevent sleep disruption."
+  },
+  {
+    "id": "entertainment",
+    "start": "19:15",
+    "end": "20:15",
+    "name": "Entertainment & Recreation",
+    "type": "leisure",
+    "desc": "Watch a movie/show, play video games, listen to music, or relax."
+  },
+  {
+    "id": "reading",
+    "start": "20:15",
+    "end": "21:00",
+    "name": "Psychology & Philosophy Reading",
+    "type": "learning",
+    "desc": "Read cognitive psychology, stoicism, Eastern philosophy, or human behavior studies."
+  },
+  {
+    "id": "wind_down",
+    "start": "21:00",
+    "end": "21:45",
+    "name": "Night Wind-down & Logging",
+    "type": "health",
+    "desc": "Fill the daily review log, reflect, evening meditation (15m), and turn off screens."
+  },
+  {
+    "id": "sleep_alarm",
+    "start": "21:45",
+    "end": "21:45",
+    "name": "Sleep Alarm",
+    "type": "alarm",
+    "desc": "Reminder to immediately go to sleep."
+  },
+  {
+    "id": "sleep_2",
+    "start": "21:45",
+    "end": "24:00",
+    "name": "Deep Sleep",
+    "type": "sleep",
+    "desc": "Restorative deep sleep for body recovery and memory consolidation."
+  }
+]

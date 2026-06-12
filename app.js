@@ -1659,7 +1659,16 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(data));
       clockTick();
     })
-    .catch(() => {});
+    .catch(() => {
+      fetch('custom_default_routine.json')
+        .then(res => { if (res.ok) return res.json(); throw new Error(); })
+        .then(data => {
+          STATE.customDefaultRoutine = data;
+          localStorage.setItem('lifestyle_customDefaultRoutine', JSON.stringify(data));
+          clockTick();
+        })
+        .catch(() => {});
+    });
 
   fetch(`${serverBase}/custom_school_routine.json`)
     .then(res => { if (res.ok) return res.json(); throw new Error(); })
@@ -1668,26 +1677,47 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(data));
       clockTick();
     })
-    .catch(() => {});
-  // Load daily review logs from local server
+    .catch(() => {
+      fetch('custom_school_routine.json')
+        .then(res => { if (res.ok) return res.json(); throw new Error(); })
+        .then(data => {
+          STATE.customSchoolRoutine = data;
+          localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(data));
+          clockTick();
+        })
+        .catch(() => {});
+    });
+  
+  // Helper to merge logs and update UI
+  const mergeLogs = (newLogs) => {
+    const localLogs = JSON.parse(localStorage.getItem('lifestyle_dailyLogs')) || [];
+    const mergedMap = {};
+    localLogs.forEach(l => { if (l.date) mergedMap[l.date] = l; });
+    newLogs.forEach(l => { if (l.date) mergedMap[l.date] = l; });
+    STATE.dailyLogs = Object.values(mergedMap);
+    localStorage.setItem('lifestyle_dailyLogs', JSON.stringify(STATE.dailyLogs));
+    updateStats();
+    renderProgressChart();
+  };
+
+  // Load daily review logs from local server, with static file fallback
   fetch(`${serverBase}/api/daily_logs`)
     .then(res => { if (res.ok) return res.json(); throw new Error(); })
     .then(serverLogs => {
       if (Array.isArray(serverLogs)) {
-        const localLogs = JSON.parse(localStorage.getItem('lifestyle_dailyLogs')) || [];
-        const mergedMap = {};
-        
-        localLogs.forEach(l => { if (l.date) mergedMap[l.date] = l; });
-        serverLogs.forEach(l => { if (l.date) mergedMap[l.date] = l; });
-        
-        STATE.dailyLogs = Object.values(mergedMap);
-        localStorage.setItem('lifestyle_dailyLogs', JSON.stringify(STATE.dailyLogs));
-        
-        updateStats();
-        renderProgressChart();
+        mergeLogs(serverLogs);
       }
     })
-    .catch(() => {});
+    .catch(() => {
+      fetch('daily_logs.json')
+        .then(res => { if (res.ok) return res.json(); throw new Error(); })
+        .then(staticLogs => {
+          if (Array.isArray(staticLogs)) {
+            mergeLogs(staticLogs);
+          }
+        })
+        .catch(() => {});
+    });
   
   // Show HTTPS Warning Banner if opened over secure connection (due to mixed content local proxy blocking)
   if (window.location.protocol === 'https:' && window.location.hostname !== 'localhost') {
