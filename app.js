@@ -830,6 +830,16 @@ function openMail(id) {
       STATE.currentDayProgress = { date: '', tasks: {} };
       
       saveToLocalStorage();
+      
+      // Persist daily logs to local server
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const saveLogsUrl = isLocalhost ? '/api/daily_logs' : 'http://localhost:8080/api/daily_logs';
+      fetch(saveLogsUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(STATE.dailyLogs)
+      }).catch(err => console.error("Error saving daily logs to server:", err));
+      
       renderMailbox();
       updateStats();
       renderProgressChart();
@@ -1657,6 +1667,25 @@ document.addEventListener('DOMContentLoaded', () => {
       STATE.customSchoolRoutine = data;
       localStorage.setItem('lifestyle_customSchoolRoutine', JSON.stringify(data));
       clockTick();
+    })
+    .catch(() => {});
+  // Load daily review logs from local server
+  fetch(`${serverBase}/api/daily_logs`)
+    .then(res => { if (res.ok) return res.json(); throw new Error(); })
+    .then(serverLogs => {
+      if (Array.isArray(serverLogs)) {
+        const localLogs = JSON.parse(localStorage.getItem('lifestyle_dailyLogs')) || [];
+        const mergedMap = {};
+        
+        localLogs.forEach(l => { if (l.date) mergedMap[l.date] = l; });
+        serverLogs.forEach(l => { if (l.date) mergedMap[l.date] = l; });
+        
+        STATE.dailyLogs = Object.values(mergedMap);
+        localStorage.setItem('lifestyle_dailyLogs', JSON.stringify(STATE.dailyLogs));
+        
+        updateStats();
+        renderProgressChart();
+      }
     })
     .catch(() => {});
   

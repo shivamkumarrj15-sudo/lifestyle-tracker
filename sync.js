@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import http from 'http';
+import querystring from 'querystring';
 import { authenticate } from '@google-cloud/local-auth';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
@@ -346,6 +347,7 @@ async function syncCalendar(auth) {
 }
 
 // Send daily review email checklist link
+// Send daily review email checklist link
 async function sendDailyEmail() {
   const config = loadEmailConfig();
   if (config.senderEmail === 'your-email@gmail.com' || config.senderAppPassword === 'your-app-password') {
@@ -353,10 +355,34 @@ async function sendDailyEmail() {
     return;
   }
 
+  const now = new Date();
+  const dateStr = now.toDateString();
+  const formattedDate = now.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+  const routine = getRoutineForDate(now);
+
   const localIP = getLocalIP();
-  const checkInUrl = config.dashboardUrl 
-    ? `${config.dashboardUrl.replace(/\/$/, '')}/?openCheckIn=true`
-    : `http://${localIP}:8080/?openCheckIn=true`;
+  const localBase = `http://${localIP}:8080`;
+  const hostedBase = config.dashboardUrl || 'https://shivamkumarrj15-sudo.github.io/lifestyle-tracker/';
+  
+  const apiSubmitUrl = `http://${localIP}:8080/api/submit_email_report`;
+  const webLink = `${hostedBase.replace(/\/$/, '')}/?openCheckIn=true`;
+  const localWebLink = `${localBase}/?openCheckIn=true`;
+
+  let tasksHtml = '';
+  routine.forEach(task => {
+    if (task.type === 'alarm') return;
+    tasksHtml += `
+      <div style="margin-bottom: 12px; text-align: left;">
+        <label style="font-size: 0.95rem; color: #f3f4f6; cursor: pointer; display: flex; align-items: flex-start;">
+          <input type="checkbox" name="task_${task.id}" value="on" style="width: 18px; height: 18px; margin-top: 1px; margin-right: 12px; accent-color: #06b6d4; cursor: pointer;">
+          <div>
+            <span style="font-weight: 600;">${task.name}</span><br>
+            <span style="font-size: 0.75rem; color: #9ca3af;">${task.start} - ${task.end} &bull; ${task.desc}</span>
+          </div>
+        </label>
+      </div>
+    `;
+  });
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -369,15 +395,46 @@ async function sendDailyEmail() {
   const mailOptions = {
     from: `"Lifestyle Automation" <${config.senderEmail}>`,
     to: config.receiverEmail,
-    subject: `Review Your Day - ${new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}`,
+    subject: `Review Your Day - ${formattedDate}`,
     html: `
-      <div style="font-family: Arial, sans-serif; background: #080c14; color: #f3f4f6; padding: 20px; border-radius: 10px; max-width: 500px; margin: 0 auto; border: 1px solid #1e293b;">
-        <h2 style="color: #06b6d4; font-size: 1.5rem; border-bottom: 1px solid #1e293b; padding-bottom: 10px; margin-top: 0;">Daily Lifestyle Check-In</h2>
-        <p style="font-size: 0.95rem; line-height: 1.6;">Hello! It is 09:30 PM. Please submit your daily completion checklist honestly to track your consistency.</p>
-        <div style="text-align: center; margin: 25px 0;">
-          <a href="${checkInUrl}" style="background: linear-gradient(135deg, #06b6d4, #6366f1); color: #ffffff; text-decoration: none; padding: 12px 24px; font-weight: bold; border-radius: 8px; font-size: 1rem; box-shadow: 0 4px 15px rgba(6, 182, 212, 0.4); display: inline-block;">Open Mobile Log Sheet</a>
+      <div style="font-family: 'Inter', Arial, sans-serif; background-color: #080c14; color: #f3f4f6; padding: 25px; border-radius: 12px; max-width: 550px; margin: 0 auto; border: 1px solid #1e293b; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+        <div style="text-align: center; border-bottom: 1px solid #1e293b; padding-bottom: 15px; margin-bottom: 20px;">
+          <h2 style="color: #06b6d4; font-size: 1.6rem; margin: 0; font-family: sans-serif;">Daily Lifestyle Check-In</h2>
+          <p style="font-size: 0.8rem; color: #9ca3af; margin: 5px 0 0 0;">Review date: ${formattedDate}</p>
         </div>
-        <p style="font-size: 0.8rem; color: #9ca3af; text-align: center; margin-bottom: 0;">Link works on your local Wi-Fi network. Make sure your phone is connected.</p>
+        
+        <p style="font-size: 0.95rem; line-height: 1.6; margin-bottom: 20px;">
+          Hello Shivam! It is 09:30 PM. Please fill out your checklist below to submit your daily consistency report.
+        </p>
+        
+        <!-- Interactive Check-In Form inside Email -->
+        <form action="${apiSubmitUrl}" method="POST" style="background-color: rgba(255,255,255,0.02); border: 1px solid #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <input type="hidden" name="dateRaw" value="${dateStr}">
+          
+          <div style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
+            <span style="font-size: 1rem; font-weight: bold; color: #06b6d4;">Which tasks did you complete today?</span>
+          </div>
+          
+          ${tasksHtml}
+          
+          <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+            <label style="display: block; font-size: 0.85rem; color: #9ca3af; margin-bottom: 6px; font-weight: 600;">Daily Notes / Skips Comments (Optional):</label>
+            <textarea name="notes" rows="2" style="width: 100%; background-color: #0b0f19; border: 1px solid #1e293b; color: #f3f4f6; border-radius: 6px; padding: 10px; font-family: sans-serif; font-size: 0.85rem; box-sizing: border-box; resize: vertical;" placeholder="Type comments or reasons for skipping tasks..."></textarea>
+          </div>
+          
+          <div style="text-align: center; margin-top: 20px;">
+            <button type="submit" style="background: linear-gradient(135deg, #059669, #10b981); color: #ffffff; border: none; padding: 12px 28px; font-weight: bold; border-radius: 8px; font-size: 1rem; cursor: pointer; display: inline-block; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); text-transform: uppercase; letter-spacing: 0.05em;">Submit Daily Report</button>
+          </div>
+        </form>
+        
+        <div style="text-align: center; font-size: 0.8rem; color: #9ca3af; line-height: 1.5; border-top: 1px solid #1e293b; padding-top: 15px;">
+          <p style="margin: 0 0 10px 0;">💡 <em>नोट: ऊपर दिया गया फॉर्म आपके घरेलू वाई-फाई (Local Wi-Fi) नेटवर्क पर सीधे सबमिट होता है।</em></p>
+          <p style="margin: 0 0 5px 0;">यदि आप वाई-फाई से बाहर हैं या फॉर्म काम नहीं कर रहा, तो यहाँ क्लिक करके सबमिट करें:</p>
+          <div style="margin-top: 10px; display: flex; justify-content: center; gap: 10px;">
+            <a href="${webLink}" style="background-color: #1e293b; border: 1px solid #334155; color: #06b6d4; text-decoration: none; padding: 8px 16px; font-size: 0.8rem; font-weight: bold; border-radius: 6px; display: inline-block;">गिटहब डैशबोर्ड पर खोलें</a>
+            <a href="${localWebLink}" style="background-color: #1e293b; border: 1px solid #334155; color: #818cf8; text-decoration: none; padding: 8px 16px; font-size: 0.8rem; font-weight: bold; border-radius: 6px; display: inline-block;">लोकल डैशबोर्ड पर खोलें</a>
+          </div>
+        </div>
       </div>
     `
   };
@@ -517,6 +574,146 @@ function handleSaveRoutineRequest(req, res) {
   });
 }
 
+function handleEmailReportSubmission(req, res) {
+  let body = '';
+  req.on('data', chunk => { body += chunk; });
+  req.on('end', () => {
+    try {
+      const parsed = querystring.parse(body);
+      const dateRaw = parsed.dateRaw || new Date().toDateString();
+      const notes = parsed.notes || '';
+      
+      const referenceTime = new Date(dateRaw);
+      const routine = getRoutineForDate(referenceTime);
+      const cleanTasks = routine.filter(t => t.type !== 'alarm');
+      
+      let completedCount = 0;
+      const tasksList = [];
+      
+      cleanTasks.forEach(task => {
+        const isDone = parsed[`task_${task.id}`] === 'on';
+        if (isDone) completedCount++;
+        tasksList.push({
+          id: task.id,
+          name: task.name,
+          done: isDone
+        });
+      });
+      
+      const score = cleanTasks.length > 0 ? (completedCount / cleanTasks.length) * 100 : 100;
+      
+      const LOGS_PATH = path.join(process.cwd(), 'daily_logs.json');
+      let logs = [];
+      if (fs.existsSync(LOGS_PATH)) {
+        try {
+          logs = JSON.parse(fs.readFileSync(LOGS_PATH, 'utf-8'));
+        } catch (e) {
+          console.error("Error parsing daily_logs.json, resetting:", e);
+        }
+      }
+      
+      logs = logs.filter(l => l.date !== dateRaw);
+      logs.push({
+        date: dateRaw,
+        score: score,
+        completedCount: completedCount,
+        totalCount: cleanTasks.length,
+        tasks: tasksList,
+        notes: notes
+      });
+      
+      fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2));
+      console.log(`Saved email check-in report for ${dateRaw}. Score: ${score}%`);
+      
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Report Submitted Successfully</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+          <style>
+            body {
+              background-color: #080c14;
+              color: #f3f4f6;
+              font-family: 'Inter', sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              padding: 20px;
+              box-sizing: border-box;
+            }
+            .container {
+              background: linear-gradient(135deg, #0f172a, #1e1b4b);
+              border: 1px solid #1e293b;
+              border-radius: 16px;
+              padding: 2.5rem;
+              text-align: center;
+              max-width: 450px;
+              width: 100%;
+              box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(6, 182, 212, 0.15);
+            }
+            h1 {
+              font-family: 'Outfit', sans-serif;
+              color: #06b6d4;
+              font-size: 2rem;
+              margin-top: 0;
+              margin-bottom: 1rem;
+              text-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+            }
+            .score {
+              font-size: 4rem;
+              font-weight: 800;
+              color: #10b981;
+              margin: 1.5rem 0;
+              line-height: 1;
+            }
+            p {
+              font-size: 0.95rem;
+              line-height: 1.6;
+              color: #9ca3af;
+              margin-bottom: 2rem;
+            }
+            .btn {
+              background: linear-gradient(135deg, #06b6d4, #6366f1);
+              color: white;
+              text-decoration: none;
+              padding: 12px 24px;
+              font-weight: bold;
+              border-radius: 8px;
+              display: inline-block;
+              transition: transform 0.2s, box-shadow 0.2s;
+              box-shadow: 0 4px 15px rgba(6, 182, 212, 0.3);
+            }
+            .btn:hover {
+              transform: translateY(-2px);
+              box-shadow: 0 6px 20px rgba(6, 182, 212, 0.5);
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Report Saved! 🎉</h1>
+            <p>Thank you Shivam! Your daily routine report has been recorded on the server.</p>
+            <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af;">Consistency Score</div>
+            <div class="score">${Math.round(score)}%</div>
+            <p style="font-size: 0.85rem;">Completed <strong>${completedCount}</strong> out of <strong>${cleanTasks.length}</strong> tasks today.</p>
+            <a href="https://shivamkumarrj15-sudo.github.io/lifestyle-tracker/" class="btn">Go to Dashboard</a>
+          </div>
+        </body>
+        </html>
+      `);
+    } catch (err) {
+      console.error('Email report submission handling error:', err);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Error parsing submission: ' + err.message);
+    }
+  });
+}
+
 function startHttpServer() {
   const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -535,6 +732,41 @@ function startHttpServer() {
         'Access-Control-Allow-Origin': '*'
       });
       res.end(JSON.stringify({ localIP: getLocalIP(), port: 8080 }));
+    } else if (req.method === 'GET' && req.url === '/api/daily_logs') {
+      const LOGS_PATH = path.join(process.cwd(), 'daily_logs.json');
+      let logs = [];
+      if (fs.existsSync(LOGS_PATH)) {
+        try {
+          logs = JSON.parse(fs.readFileSync(LOGS_PATH, 'utf-8'));
+        } catch (e) {
+          console.error("Error reading daily logs:", e.message);
+        }
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify(logs));
+    } else if (req.method === 'POST' && req.url === '/api/daily_logs') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const logs = JSON.parse(body);
+          const LOGS_PATH = path.join(process.cwd(), 'daily_logs.json');
+          fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2));
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          });
+          res.end(JSON.stringify({ success: true }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+    } else if (req.method === 'POST' && req.url === '/api/submit_email_report') {
+      handleEmailReportSubmission(req, res);
     } else if (req.method === 'POST' && req.url === '/api/ai') {
       handleAIProxyRequest(req, res);
     } else if (req.method === 'POST' && req.url === '/api/save_routine') {
